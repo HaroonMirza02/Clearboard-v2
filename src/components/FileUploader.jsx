@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { zipFile } from '../utils/zipFile'
 
 function FileUploader() {
   const inputRef = useRef(null)
@@ -12,10 +13,30 @@ function FileUploader() {
     if (!file) return
     setFileName(file.name)
     setIsUploading(true)
-    // Simulate upload delay
-    await new Promise(r => setTimeout(r, 1800))
+    try {
+      // Compress file to zip
+      const zipped = await zipFile(file)
+      // Prepare form data
+      const formData = new FormData()
+      formData.append('file', zipped)
+      formData.append('filename', zipped.name)
+      formData.append('contentType', zipped.type)
+      formData.append('size', zipped.size)
+      formData.append('category', 'research') // or get from UI
+      formData.append('compress', 'zip')
+      // Send to backend
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData,
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      alert('Uploaded: ' + zipped.name)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
     setIsUploading(false)
-    alert(`Uploaded: ${file.name}`)
     e.target.value = ''
   }
 
