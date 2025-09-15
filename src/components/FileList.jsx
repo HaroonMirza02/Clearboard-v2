@@ -27,7 +27,6 @@ const primaryBtn = { width: '100%', padding: 12, borderRadius: 10, background: '
 
 const container = { maxWidth: 1180, margin: '0 auto' };
 const sectionCard = { background: '#fff', borderRadius: 14, boxShadow: '0 6px 28px rgba(16,24,40,0.06)', padding: 20 };
-const splitRow = { display: 'grid', gridTemplateColumns: '1fr', gap: 16 };
 const uploadGrid = { display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(180px, 260px) minmax(160px, 220px) auto', gap: 12, alignItems: 'end' };
 const select = { ...input };
 const smallBtn = { padding: '12px 18px', borderRadius: 10, background: '#2563eb', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer' };
@@ -49,40 +48,38 @@ function FileList() {
   const [compress, setCompress] = useState('none');
   const [category, setCategory] = useState('Others');
   const [customCategory, setCustomCategory] = useState('');
+  const [selectedVersions, setSelectedVersions] = useState({});
 
-  // Login handler
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(login)
-      });
+      const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(login) });
       if (!res.ok) throw new Error('Login failed');
       const data = await res.json();
       setToken(data.token);
       setLogin({ userId: '', password: '' });
-    } catch (err) {
-      setError('Login failed');
-    }
+    } catch (err) { setError('Login failed'); }
     setLoading(false);
   };
 
-  // Fetch files after login
   useEffect(() => {
     if (!token) return;
     setLoading(true);
     fetch('/api/files', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => { if (!res.ok) throw new Error('Failed to fetch files'); return res.json(); })
-      .then(setFiles)
+      .then(data => {
+        setFiles(data);
+        // Initialize selected version per row to latest
+        const init = {};
+        data.forEach(f => { init[f.id] = f.version; });
+        setSelectedVersions(init);
+      })
       .catch(() => setError('Failed to fetch files'))
       .finally(() => setLoading(false));
   }, [token]);
 
-  // Upload handler
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!file) return;
@@ -98,18 +95,20 @@ function FileList() {
       await res.json();
       setFile(null);
       const filesRes = await fetch('/api/files', { headers: { Authorization: `Bearer ${token}` } });
-      setFiles(await filesRes.json());
-    } catch (err) {
-      setError('Upload failed');
-    }
+      const data = await filesRes.json();
+      setFiles(data);
+      const init = {};
+      data.forEach(f => { init[f.id] = f.version; });
+      setSelectedVersions(init);
+    } catch (err) { setError('Upload failed'); }
     setLoading(false);
   };
 
-  // Download handler
-  const handleDownload = async (fileId, name, fileType) => {
+  const handleDownload = async (fileId, name, fileType, version) => {
     setError('');
     try {
-      const res = await fetch(`/api/files/download/${fileId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const urlPath = version ? `/api/files/download/${fileId}/version/${version}` : `/api/files/download/${fileId}`;
+      const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -120,12 +119,9 @@ function FileList() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setError('Download failed');
-    }
+    } catch (err) { setError('Download failed'); }
   };
 
-  // Landing: Login page first
   if (!token) {
     return (
       <div style={pageStyle}>
@@ -148,7 +144,6 @@ function FileList() {
   return (
     <div style={pageStyle}>
       <div style={container}>
-        {/* Upload section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
           <h2 style={{ margin: 0, color: '#1f2a37' }}>Upload a File</h2>
           <div style={{ marginTop: 12 }}>
@@ -184,7 +179,6 @@ function FileList() {
           </div>
         </div>
 
-        {/* Files table */}
         <div style={tableWrap}>
           <table style={tableStyle}>
             <thead>
@@ -208,11 +202,21 @@ function FileList() {
                   <td style={tdStyle}>{f.size}</td>
                   <td style={tdStyle}>{f.compressionType}</td>
                   <td style={tdStyle}>{f.category}</td>
-                  <td style={tdStyle}>{f.version}</td>
+                  <td style={tdStyle}>
+                    <select
+                      value={selectedVersions[f.id] ?? f.version}
+                      onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
+                      style={{ ...select, padding: '8px 10px', width: 120 }}
+                    >
+                      {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
+                        <option key={v.version} value={v.version}>v{v.version}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td style={tdStyle}>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : '-'}</td>
                   <td style={tdStyle}>{f.modifiedAt ? new Date(f.modifiedAt).toLocaleString() : '-'}</td>
                   <td style={tdStyle}>
-                    <button onClick={() => handleDownload(f.id, f.name, f.fileType)} style={{ ...smallBtn, padding: '8px 14px' }}>Download</button>
+                    <button onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} style={{ ...smallBtn, padding: '8px 14px' }}>Download</button>
                   </td>
                 </tr>
               ))}

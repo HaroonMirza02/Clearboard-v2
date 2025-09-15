@@ -169,35 +169,65 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 // List files (for testing/demo)
 app.get('/api/files', auth, (req, res) => {
   const meta = loadMeta();
-  // Only show the latest version for each (name, category) pair
-  const latest = {};
+  // Group by (name, category)
+  const groups = {};
   Object.values(meta).forEach(f => {
     const key = `${f.originalname}||${f.category || 'Others'}`;
-    if (!latest[key] || (f.version || 1) > (latest[key].version || 1)) {
-      latest[key] = f;
-    }
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(f);
   });
-  const files = Object.values(latest).map(f => {
-    const ext = f.originalname.includes('.') ? f.originalname.split('.').pop() : '';
-    const name = f.originalname.replace(new RegExp(`\.${ext}$`), '');
+  // For each group, pick latest for row and attach history
+  const files = Object.values(groups).map(arr => {
+    arr.sort((a, b) => (b.version || 1) - (a.version || 1));
+    const latest = arr[0];
+    const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
+    const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
     let size = 0;
-    try {
-      size = fs.statSync(f.storedPath).size;
-    } catch {}
+    try { size = fs.statSync(latest.storedPath).size; } catch {}
     return {
-      id: f.id,
+      id: latest.id,
       name,
       fileType: ext,
       size: (size / 1024).toFixed(1),
-      compressionType: f.compressionType,
-      category: f.category || 'Others',
-      version: f.version || 1,
-      uploadedAt: f.uploadedAt,
-      modifiedAt: f.modifiedAt,
-      download: `/api/files/download/${f.id}`
+      compressionType: latest.compressionType,
+      category: latest.category || 'Others',
+      version: latest.version || 1,
+      uploadedAt: latest.uploadedAt,
+      modifiedAt: latest.modifiedAt,
+      versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
+      download: `/api/files/download/${latest.id}`
     };
   });
   res.json(files);
+});
+
+// Download a specific version by number
+app.get('/api/files/download/:fileKey/version/:version', auth, (req, res) => {
+  const { fileKey, version } = req.params;
+  const meta = loadMeta();
+  // fileKey can be an id or a latest id; we search by matching group of that id
+  const all = Object.values(meta);
+  const current = all.find(f => f.id === fileKey) || all.find(f => f.id === fileKey);
+  if (!current) return res.status(404).json({ message: 'File not found' });
+  const group = all.filter(f => f.originalname === current.originalname && (f.category || 'Others') === (current.category || 'Others'));
+  const target = group.find(f => (f.version || 1) === Number(version));
+  if (!target) return res.status(404).json({ message: 'Requested version not found' });
+  res.setHeader('Content-Disposition', `attachment; filename="${current.originalname}"`);
+  res.setHeader('Content-Type', current.mimetype);
+  const stream = fs.createReadStream(target.storedPath);
+  stream.on('error', err => res.status(500).json({ message: 'File read error', error: err.message }));
+  if (target.compressionType === 'zip') {
+    const unzipper = require('unzipper');
+    const unzipStream = stream.pipe(unzipper.ParseOne());
+    unzipStream.on('error', err => res.status(500).json({ message: 'Decompression error', error: err.message }));
+    unzipStream.pipe(res);
+  } else if (target.compressionType === 'brotli') {
+    const brotliStream = stream.pipe(zlib.createBrotliDecompress());
+    brotliStream.on('error', err => res.status(500).json({ message: 'Decompression error', error: err.message }));
+    brotliStream.pipe(res);
+  } else {
+    stream.pipe(res);
+  }
 });
 
 const PORT = process.env.PORT || 5000;
