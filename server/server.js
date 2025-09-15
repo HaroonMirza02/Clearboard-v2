@@ -61,16 +61,22 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     const { originalname, mimetype, path: tempPath } = req.file;
     const { compress = 'none', category = 'Others' } = req.body;
     const meta = loadMeta();
-    // Versioning logic: find existing file with same name and category
-    let existing = Object.values(meta).find(f => f.originalname === originalname && (f.category || 'Others') === category);
-    let version = 1;
-    let uploadedAt = new Date().toISOString();
-    let modifiedAt = null;
-    if (existing) {
-      version = (existing.version || 1) + 1;
-      uploadedAt = existing.uploadedAt || uploadedAt;
-      modifiedAt = new Date().toISOString();
-    }
+
+    // Compute versioning based on all existing entries with same name+category
+    const sameGroup = Object.values(meta).filter(f => f.originalname === originalname && (f.category || 'Others') === category);
+    const nowIso = new Date().toISOString();
+    const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
+    const firstUploadedAt = sameGroup.length
+      ? sameGroup.reduce((earliest, f) => {
+          const ts = f.uploadedAt || nowIso;
+          return ts < earliest ? ts : earliest;
+        }, sameGroup[0].uploadedAt || nowIso)
+      : nowIso;
+
+    const version = maxVersion + 1;
+    const uploadedAt = firstUploadedAt; // preserve earliest
+    const modifiedAt = version > 1 ? nowIso : null;
+
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     let storedPath = path.join(__dirname, 'uploads', id);
     let compressionType = 'none';
@@ -109,7 +115,8 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       // No compression, just move
       fs.renameSync(tempPath, storedPath);
     }
-    // Save new version as a new entry, but keep only the latest for listing
+
+    // Save new file version entry
     meta[id] = {
       id,
       originalname,
