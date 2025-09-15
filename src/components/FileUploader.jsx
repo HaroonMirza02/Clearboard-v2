@@ -43,9 +43,9 @@ function FileUploader() {
   return (
     <div className="cb-uploader">
       <input ref={inputRef} type="file" onChange={onChange} hidden />
-      <button className="cb-btn" onClick={onPick} disabled={isUploading}>
+      {/* <button className="cb-btn" onClick={onPick} disabled={isUploading}>
         {isUploading ? 'Uploading...' : 'Upload New File'}
-      </button>
+      </button> */}
       {isUploading && (
         <div className="cb-loader" aria-label="uploading" />
       )}

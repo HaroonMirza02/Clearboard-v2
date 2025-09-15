@@ -1,38 +1,200 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
-
-const filesRouter = require('./routes/files');
-const authRouter = require('./routes/auth');
-const archivesRouter = require('./routes/archives');
-const errorHandler = require('./middleware/errorHandler');
-const setupSwagger = require('./swagger');
+const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
+const morgan = require('morgan');
+const multer = require('multer');
+const zlib = require('zlib');
+const archiver = require('archiver');
 
 const app = express();
-
-
 app.use(express.json());
-setupSwagger(app);
+app.use(morgan('dev'));
 
+const upload = multer({ dest: 'uploads/' });
 
-// Routes
-app.use('/api/auth', authRouter);
-app.use('/api/files', filesRouter);
-app.use('/api/archives', archivesRouter);
+// Hardcoded credentials and secret
+const DEMO_USER = { userId: 'demo', password: 'password123', id: 'demo-user-1' };
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
 
-// Error handler
-app.use(errorHandler);
+// Metadata file
+const META_PATH = path.join(__dirname, 'uploads', 'filemeta.json');
+function loadMeta() {
+  if (!fs.existsSync(META_PATH)) return {};
+  return JSON.parse(fs.readFileSync(META_PATH, 'utf8'));
+}
+function saveMeta(meta) {
+  fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2));
+}
+
+// Login endpoint (returns JWT)
+app.post('/api/login', (req, res) => {
+  const { userId, password } = req.body;
+  if (userId === DEMO_USER.userId && password === DEMO_USER.password) {
+    const token = jwt.sign({ id: DEMO_USER.id, userId: DEMO_USER.userId }, JWT_SECRET, { expiresIn: '1d' });
+    return res.json({ token });
+  }
+  res.status(401).json({ message: 'Invalid credentials' });
+});
+
+// JWT auth middleware
+function auth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
+
+// Upload endpoint (with optional compression)
+app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const { originalname, mimetype, path: tempPath } = req.file;
+    const { compress = 'none', category = 'Others' } = req.body;
+    const meta = loadMeta();
+    // Versioning logic: find existing file with same name and category
+    let existing = Object.values(meta).find(f => f.originalname === originalname && (f.category || 'Others') === category);
+    let version = 1;
+    let uploadedAt = new Date().toISOString();
+    let modifiedAt = null;
+    if (existing) {
+      version = (existing.version || 1) + 1;
+      uploadedAt = existing.uploadedAt || uploadedAt;
+      modifiedAt = new Date().toISOString();
+    }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    let storedPath = path.join(__dirname, 'uploads', id);
+    let compressionType = 'none';
+    let finalMime = mimetype;
+    if (compress === 'zip') {
+      // Compress to zip
+      const zipPath = storedPath + '.zip';
+      await new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(zipPath);
+        const archive = archiver('zip');
+        output.on('close', resolve);
+        archive.on('error', reject);
+        archive.pipe(output);
+        archive.file(tempPath, { name: originalname });
+        archive.finalize();
+      });
+      fs.unlinkSync(tempPath);
+      storedPath = zipPath;
+      compressionType = 'zip';
+      finalMime = 'application/zip';
+    } else if (compress === 'brotli') {
+      // Compress to brotli
+      const brotliPath = storedPath + '.br';
+      await new Promise((resolve, reject) => {
+        const input = fs.createReadStream(tempPath);
+        const output = fs.createWriteStream(brotliPath);
+        input.pipe(zlib.createBrotliCompress()).pipe(output);
+        output.on('finish', resolve);
+        output.on('error', reject);
+      });
+      fs.unlinkSync(tempPath);
+      storedPath = brotliPath;
+      compressionType = 'brotli';
+      finalMime = 'application/x-brotli';
+    } else {
+      // No compression, just move
+      fs.renameSync(tempPath, storedPath);
+    }
+    // Save new version as a new entry, but keep only the latest for listing
+    meta[id] = {
+      id,
+      originalname,
+      mimetype,
+      storedPath,
+      compressionType,
+      finalMime,
+      category,
+      version,
+      uploadedAt,
+      modifiedAt
+    };
+    saveMeta(meta);
+    res.json({ message: 'Upload complete', fileId: id });
+  } catch (err) {
+    res.status(500).json({ message: 'Upload failed', error: err.message });
+  }
+});
+
+// Download endpoint (decompress if needed)
+app.get('/api/files/download/:fileId', auth, async (req, res) => {
+  const { fileId } = req.params;
+  const meta = loadMeta();
+  const file = meta[fileId];
+  if (!file) return res.status(404).json({ message: 'File not found' });
+  res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
+  res.setHeader('Content-Type', file.mimetype);
+  const stream = fs.createReadStream(file.storedPath);
+  stream.on('error', err => {
+    res.status(500).json({ message: 'File read error', error: err.message });
+  });
+  if (file.compressionType === 'zip') {
+    const unzipper = require('unzipper');
+    const unzipStream = stream.pipe(unzipper.ParseOne());
+    unzipStream.on('error', err => {
+      res.status(500).json({ message: 'Decompression error', error: err.message });
+    });
+    unzipStream.pipe(res);
+  } else if (file.compressionType === 'brotli') {
+    const brotliStream = stream.pipe(zlib.createBrotliDecompress());
+    brotliStream.on('error', err => {
+      res.status(500).json({ message: 'Decompression error', error: err.message });
+    });
+    brotliStream.pipe(res);
+  } else {
+    stream.pipe(res);
+  }
+});
+
+// List files (for testing/demo)
+app.get('/api/files', auth, (req, res) => {
+  const meta = loadMeta();
+  // Only show the latest version for each (name, category) pair
+  const latest = {};
+  Object.values(meta).forEach(f => {
+    const key = `${f.originalname}||${f.category || 'Others'}`;
+    if (!latest[key] || (f.version || 1) > (latest[key].version || 1)) {
+      latest[key] = f;
+    }
+  });
+  const files = Object.values(latest).map(f => {
+    const ext = f.originalname.includes('.') ? f.originalname.split('.').pop() : '';
+    const name = f.originalname.replace(new RegExp(`\.${ext}$`), '');
+    let size = 0;
+    try {
+      size = fs.statSync(f.storedPath).size;
+    } catch {}
+    return {
+      id: f.id,
+      name,
+      fileType: ext,
+      size: (size / 1024).toFixed(1),
+      compressionType: f.compressionType,
+      category: f.category || 'Others',
+      version: f.version || 1,
+      uploadedAt: f.uploadedAt,
+      modifiedAt: f.modifiedAt,
+      download: `/api/files/download/${f.id}`
+    };
+  });
+  res.json(files);
+});
 
 const PORT = process.env.PORT || 5000;
-
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
-
-// Archive job
-require('./services/archiveJob')();
+app.listen(PORT, () => {
+  // No demo JWT or error logging
+  // Server running
+});
