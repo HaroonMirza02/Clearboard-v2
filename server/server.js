@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
+const { uploadToGCS, getGCSDownloadStream, getSignedUrl } = require('./services/gcs');
 
 const app = express();
 app.use(express.json());
@@ -54,6 +55,8 @@ function auth(req, res, next) {
   }
 }
 
+// GCS service is already imported at the top of the file
+
 // Upload endpoint (with optional compression)
 app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
   try {
@@ -78,12 +81,13 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     const modifiedAt = version > 1 ? nowIso : null;
 
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    let storedPath = path.join(__dirname, 'uploads', id);
+    let gcsObjectKey = `files/${id}`;
     let compressionType = 'none';
     let finalMime = mimetype;
+    
     if (compress === 'zip') {
       // Compress to zip
-      const zipPath = storedPath + '.zip';
+      const zipPath = tempPath + '.zip';
       await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
         const archive = archiver('zip');
@@ -94,12 +98,18 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         archive.finalize();
       });
       fs.unlinkSync(tempPath);
-      storedPath = zipPath;
+      
+      // Upload to GCS
+      gcsObjectKey += '.zip';
+      const fileBuffer = fs.readFileSync(zipPath);
+      await uploadToGCS(gcsObjectKey, fileBuffer, 'application/zip');
+      fs.unlinkSync(zipPath); // Clean up local file
+      
       compressionType = 'zip';
       finalMime = 'application/zip';
     } else if (compress === 'brotli') {
       // Compress to brotli
-      const brotliPath = storedPath + '.br';
+      const brotliPath = tempPath + '.br';
       await new Promise((resolve, reject) => {
         const input = fs.createReadStream(tempPath);
         const output = fs.createWriteStream(brotliPath);
@@ -108,12 +118,21 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         output.on('error', reject);
       });
       fs.unlinkSync(tempPath);
-      storedPath = brotliPath;
+      
+      // Upload to GCS
+      gcsObjectKey += '.br';
+      const fileBuffer = fs.readFileSync(brotliPath);
+      await uploadToGCS(gcsObjectKey, fileBuffer, 'application/x-brotli');
+      fs.unlinkSync(brotliPath); // Clean up local file
+      
       compressionType = 'brotli';
       finalMime = 'application/x-brotli';
     } else {
-      // No compression, just move
-      fs.renameSync(tempPath, storedPath);
+      // No compression, just upload directly
+      gcsObjectKey += path.extname(originalname);
+      const fileBuffer = fs.readFileSync(tempPath);
+      await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
+      fs.unlinkSync(tempPath); // Clean up local file
     }
 
     // Save new file version entry
@@ -121,7 +140,8 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       id,
       originalname,
       mimetype,
-      storedPath,
+      gcsObjectKey, // Store GCS object key instead of local path
+      storageProvider: 'gcs', // Mark as stored in GCS
       compressionType,
       finalMime,
       category,
@@ -136,33 +156,51 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-// Download endpoint (decompress if needed)
+// Download endpoint (using GCS and handling decompression)
 app.get('/api/files/download/:fileId', auth, async (req, res) => {
-  const { fileId } = req.params;
-  const meta = loadMeta();
-  const file = meta[fileId];
-  if (!file) return res.status(404).json({ message: 'File not found' });
-  res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
-  res.setHeader('Content-Type', file.mimetype);
-  const stream = fs.createReadStream(file.storedPath);
-  stream.on('error', err => {
-    res.status(500).json({ message: 'File read error', error: err.message });
-  });
-  if (file.compressionType === 'zip') {
-    const unzipper = require('unzipper');
-    const unzipStream = stream.pipe(unzipper.ParseOne());
-    unzipStream.on('error', err => {
-      res.status(500).json({ message: 'Decompression error', error: err.message });
+  try {
+    const { fileId } = req.params;
+    const meta = loadMeta();
+    const file = meta[fileId];
+    
+    if (!file) return res.status(404).json({ message: 'File not found' });
+    
+    // Set appropriate headers for download
+    res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
+    res.setHeader('Content-Type', file.mimetype);
+    
+    // Get download stream from GCS
+  const readStream = getGCSDownloadStream(file.gcsObjectKey);
+
+    
+    readStream.on('error', (err) => {
+      console.error('GCS read error:', err);
+      res.status(500).json({ message: 'File read error', error: err.message });
     });
-    unzipStream.pipe(res);
-  } else if (file.compressionType === 'brotli') {
-    const brotliStream = stream.pipe(zlib.createBrotliDecompress());
-    brotliStream.on('error', err => {
-      res.status(500).json({ message: 'Decompression error', error: err.message });
-    });
-    brotliStream.pipe(res);
-  } else {
-    stream.pipe(res);
+    
+    // Handle decompression based on compression type
+    if (file.compressionType === 'zip') {
+      const unzipper = require('unzipper');
+      const unzipStream = readStream.pipe(unzipper.ParseOne());
+      unzipStream.on('error', err => {
+        console.error('Zip decompression error:', err);
+        res.status(500).json({ message: 'Decompression error', error: err.message });
+      });
+      unzipStream.pipe(res);
+    } else if (file.compressionType === 'brotli') {
+      const brotliStream = readStream.pipe(zlib.createBrotliDecompress());
+      brotliStream.on('error', err => {
+        console.error('Brotli decompression error:', err);
+        res.status(500).json({ message: 'Decompression error', error: err.message });
+      });
+      brotliStream.pipe(res);
+    } else {
+      // No compression, just pipe the file directly
+      readStream.pipe(res);
+    }
+  } catch (err) {
+    console.error('Download error:', err);
+    res.status(500).json({ message: 'Download failed', error: err.message });
   }
 });
 
@@ -182,8 +220,11 @@ app.get('/api/files', auth, (req, res) => {
     const latest = arr[0];
     const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
     const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
-    let size = 0;
-    try { size = fs.statSync(latest.storedPath).size; } catch {}
+    
+    // Size is not available directly from metadata for GCS files
+    // We'll use a placeholder size for now
+    const size = 0;
+    
     return {
       id: latest.id,
       name,
@@ -195,14 +236,15 @@ app.get('/api/files', auth, (req, res) => {
       uploadedAt: latest.uploadedAt,
       modifiedAt: latest.modifiedAt,
       versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
-      download: `/api/files/download/${latest.id}`
+      download: `/api/files/download/${latest.id}`,
+      storageProvider: latest.storageProvider || 'local'
     };
   });
   res.json(files);
 });
 
 // Download a specific version by number
-app.get('/api/files/download/:fileKey/version/:version', auth, (req, res) => {
+app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
   const { fileKey, version } = req.params;
   const meta = loadMeta();
   // fileKey can be an id or a latest id; we search by matching group of that id
@@ -212,22 +254,7 @@ app.get('/api/files/download/:fileKey/version/:version', auth, (req, res) => {
   const group = all.filter(f => f.originalname === current.originalname && (f.category || 'Others') === (current.category || 'Others'));
   const target = group.find(f => (f.version || 1) === Number(version));
   if (!target) return res.status(404).json({ message: 'Requested version not found' });
-  res.setHeader('Content-Disposition', `attachment; filename="${current.originalname}"`);
-  res.setHeader('Content-Type', current.mimetype);
-  const stream = fs.createReadStream(target.storedPath);
-  stream.on('error', err => res.status(500).json({ message: 'File read error', error: err.message }));
-  if (target.compressionType === 'zip') {
-    const unzipper = require('unzipper');
-    const unzipStream = stream.pipe(unzipper.ParseOne());
-    unzipStream.on('error', err => res.status(500).json({ message: 'Decompression error', error: err.message }));
-    unzipStream.pipe(res);
-  } else if (target.compressionType === 'brotli') {
-    const brotliStream = stream.pipe(zlib.createBrotliDecompress());
-    brotliStream.on('error', err => res.status(500).json({ message: 'Decompression error', error: err.message }));
-    brotliStream.pipe(res);
-  } else {
-    stream.pipe(res);
-  }
+  res.redirect(`/api/files/download/${target.id}`);
 });
 
 const PORT = process.env.PORT || 5000;

@@ -1,2 +1,74 @@
 
-// GCS integration removed. Use GridFS for file storage.
+// Google Cloud Storage helper
+const { Storage } = require('@google-cloud/storage');
+const stream = require('stream');
+
+// Initialize storage with credentials from environment variables
+const storage = new Storage();
+const bucketName = process.env.GCS_BUCKET_NAME || 'clearboard';
+
+console.log('Using GCS bucket:', bucketName);
+
+// Get bucket reference
+function getBucket() {
+  return storage.bucket(bucketName);
+}
+
+// Upload a buffer to GCS
+function uploadToGCS(filename, buffer, contentType) {
+  return new Promise((resolve, reject) => {
+    const bucket = getBucket();
+    const file = bucket.file(filename);
+    const options = {
+      contentType,
+      metadata: {
+        contentType,
+      }
+    };
+
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(buffer);
+    
+    bufferStream
+      .pipe(file.createWriteStream(options))
+      .on('error', reject)
+      .on('finish', () => {
+        resolve(filename);
+      });
+  });
+}
+
+// Get a download stream from GCS
+function getGCSDownloadStream(filename) {
+  const bucket = getBucket();
+  const file = bucket.file(filename);
+  return file.createReadStream();
+}
+
+// Get a signed URL for direct browser download
+function getSignedUrl(filename, expiresInMinutes = 15) {
+  const bucket = getBucket();
+  const file = bucket.file(filename);
+  
+  return file.getSignedUrl({
+    action: 'read',
+    expires: Date.now() + expiresInMinutes * 60 * 1000
+  }).then(urls => urls[0]);
+}
+
+// Create a write stream to GCS
+function createGCSWriteStream(filename, contentType) {
+  const bucket = getBucket();
+  const file = bucket.file(filename);
+  return file.createWriteStream({
+    contentType,
+    resumable: false
+  });
+}
+
+module.exports = { 
+  uploadToGCS, 
+  getGCSDownloadStream, 
+  getSignedUrl,
+  createGCSWriteStream
+};

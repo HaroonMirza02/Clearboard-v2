@@ -121,7 +121,7 @@ router.get('/', async (req, res, next) => {
  *                 fileId:
  *                   type: string
  */
-const { uploadToGridFS } = require('../services/gridfs');
+const { uploadToGCS } = require('../services/gcs');
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     const { filename, contentType, size, category, compress = 'zip' } = req.body;
@@ -132,14 +132,15 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       file = await File.create({ name: filename, ownerId: null, category });
     }
     const versionNumber = await FileVersion.countDocuments({ fileId: file._id }) + 1;
-    // Upload to GridFS
-    const gridfsId = await uploadToGridFS(filename, req.file.buffer, contentType);
+    // Upload to GCS
+    const objectKey = `${file._id}/v${versionNumber}/${filename}`;
+    await uploadToGCS(objectKey, req.file.buffer, contentType);
     const checksum = require('crypto').createHash('sha256').update(req.file.buffer).digest('hex');
     await FileVersion.create({
       fileId: file._id,
       versionNumber,
-      provider: 'gridfs',
-      objectKey: gridfsId.toString(),
+      provider: 'gcs',
+      objectKey: objectKey,
       size: req.file.size,
       contentType,
       checksum,
@@ -253,7 +254,10 @@ router.get('/download/:fileId', auth, async (req, res, next) => {
     if (!fileVersion) return res.status(404).json({ message: 'File not found' });
     fileVersion.lastAccessedAt = new Date();
     await fileVersion.save();
-    const url = await getPresignedDownloadUrl(fileVersion.objectKey);
+    
+    // Use GCS signed URL for download
+    const { getSignedUrl } = require('../services/gcs');
+    const url = await getSignedUrl(fileVersion.objectKey);
     res.json({ url });
   } catch (err) {
     next(err);
