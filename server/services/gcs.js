@@ -56,6 +56,19 @@ function getSignedUrl(filename, expiresInMinutes = 15) {
   }).then(urls => urls[0]);
 }
 
+// Get file metadata including size
+async function getFileMetadata(filename) {
+  const bucket = getBucket();
+  const file = bucket.file(filename);
+  const [metadata] = await file.getMetadata();
+  return {
+    size: parseInt(metadata.size, 10),
+    contentType: metadata.contentType,
+    timeCreated: metadata.timeCreated,
+    updated: metadata.updated
+  };
+}
+
 // Create a write stream to GCS
 function createGCSWriteStream(filename, contentType) {
   const bucket = getBucket();
@@ -70,5 +83,6 @@ module.exports = {
   uploadToGCS, 
   getGCSDownloadStream, 
   getSignedUrl,
-  createGCSWriteStream
+  createGCSWriteStream,
+  getFileMetadata
 };

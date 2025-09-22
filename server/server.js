@@ -7,7 +7,7 @@ const morgan = require('morgan');
 const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
-const { uploadToGCS, getGCSDownloadStream, getSignedUrl } = require('./services/gcs');
+const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
 
 const app = express();
 app.use(express.json());
@@ -103,10 +103,12 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       gcsObjectKey += '.zip';
       const fileBuffer = fs.readFileSync(zipPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/zip');
+      const metadata = await getFileMetadata(gcsObjectKey);
       fs.unlinkSync(zipPath); // Clean up local file
       
       compressionType = 'zip';
       finalMime = 'application/zip';
+      size = metadata.size;
     } else if (compress === 'brotli') {
       // Compress to brotli
       const brotliPath = tempPath + '.br';
@@ -123,16 +125,20 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       gcsObjectKey += '.br';
       const fileBuffer = fs.readFileSync(brotliPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/x-brotli');
+      const metadata = await getFileMetadata(gcsObjectKey);
       fs.unlinkSync(brotliPath); // Clean up local file
       
       compressionType = 'brotli';
       finalMime = 'application/x-brotli';
+      size = metadata.size;
     } else {
       // No compression, just upload directly
       gcsObjectKey += path.extname(originalname);
       const fileBuffer = fs.readFileSync(tempPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
+      const metadata = await getFileMetadata(gcsObjectKey);
       fs.unlinkSync(tempPath); // Clean up local file
+      size = metadata.size;
     }
 
     // Save new file version entry
@@ -147,7 +153,8 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       category,
       version,
       uploadedAt,
-      modifiedAt
+      modifiedAt,
+      size // Store the file size from GCS
     };
     saveMeta(meta);
     res.json({ message: 'Upload complete', fileId: id });
@@ -205,43 +212,62 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 });
 
 // List files (for testing/demo)
-app.get('/api/files', auth, (req, res) => {
-  const meta = loadMeta();
-  // Group by (name, category)
-  const groups = {};
-  Object.values(meta).forEach(f => {
-    const key = `${f.originalname}||${f.category || 'Others'}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(f);
-  });
-  // For each group, pick latest for row and attach history
-  const files = Object.values(groups).map(arr => {
-    arr.sort((a, b) => (b.version || 1) - (a.version || 1));
-    const latest = arr[0];
-    const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
-    const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
-    
-    // Size is not available directly from metadata for GCS files
-    // We'll use a placeholder size for now
-    const size = 0;
-    
-    return {
-      id: latest.id,
-      name,
-      fileType: ext,
-      size: (size / 1024).toFixed(1),
-      compressionType: latest.compressionType,
-      category: latest.category || 'Others',
-      version: latest.version || 1,
-      uploadedAt: latest.uploadedAt,
-      modifiedAt: latest.modifiedAt,
-      versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
-      download: `/api/files/download/${latest.id}`,
-      storageProvider: latest.storageProvider || 'local'
-    };
-  });
-  res.json(files);
+app.get('/api/files', auth, async (req, res) => {
+  try {
+    const meta = loadMeta();
+    // Group by (name, category)
+    const groups = {};
+    Object.values(meta).forEach(f => {
+      const key = `${f.originalname}||${f.category || 'Others'}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(f);
+    });
+
+    // For each group, pick latest for row and attach history
+    const files = await Promise.all(
+      Object.values(groups).map(async arr => {
+        arr.sort((a, b) => (b.version || 1) - (a.version || 1));
+        const latest = arr[0];
+        const ext = latest.originalname.includes('.')
+          ? latest.originalname.split('.').pop()
+          : '';
+        const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
+
+        // Get file size from GCS for GCS-stored files
+        let size = 0;
+        if (latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
+          try {
+            const metadata = await getFileMetadata(latest.gcsObjectKey);
+            size = metadata.size;
+          } catch (err) {
+            console.error('Error fetching GCS metadata:', err);
+          }
+        }
+
+        return {
+          id: latest.id,
+          name,
+          fileType: ext,
+          size: (size / 1024).toFixed(1), // KB
+          compressionType: latest.compressionType,
+          category: latest.category || 'Others',
+          version: latest.version || 1,
+          uploadedAt: latest.uploadedAt,
+          modifiedAt: latest.modifiedAt,
+          versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
+          download: `/api/files/download/${latest.id}`,
+          storageProvider: latest.storageProvider || 'local'
+        };
+      })
+    );
+
+    res.json(files);
+  } catch (err) {
+    console.error('List error:', err);
+    res.status(500).json({ message: 'List failed', error: err.message });
+  }
 });
+
 
 // Download a specific version by number
 app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
