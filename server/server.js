@@ -7,9 +7,23 @@ const morgan = require('morgan');
 const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
+const cors = require('cors'); // added for CORS
 const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
 
 const app = express();
+
+// Enable CORS for frontend origins
+
+app.use(cors({
+  origin: ["https://fifth-flame-472409-q0.web.app"], // your frontend domain
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.options('*', cors()); // enable preflight for all routes
+app.use(express.json());
+app.use(morgan('dev'));
+
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -55,8 +69,6 @@ function auth(req, res, next) {
   }
 }
 
-// GCS service is already imported at the top of the file
-
 // Upload endpoint (with optional compression)
 app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
   try {
@@ -65,7 +77,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     const { compress = 'none', category = 'Others' } = req.body;
     const meta = loadMeta();
 
-    // Compute versioning based on all existing entries with same name+category
+    // Versioning
     const sameGroup = Object.values(meta).filter(f => f.originalname === originalname && (f.category || 'Others') === category);
     const nowIso = new Date().toISOString();
     const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
@@ -84,9 +96,9 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     let gcsObjectKey = `files/${id}`;
     let compressionType = 'none';
     let finalMime = mimetype;
-    
+    let size = 0;
+
     if (compress === 'zip') {
-      // Compress to zip
       const zipPath = tempPath + '.zip';
       await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
@@ -98,19 +110,15 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         archive.finalize();
       });
       fs.unlinkSync(tempPath);
-      
-      // Upload to GCS
       gcsObjectKey += '.zip';
       const fileBuffer = fs.readFileSync(zipPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/zip');
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(zipPath); // Clean up local file
-      
+      fs.unlinkSync(zipPath);
       compressionType = 'zip';
       finalMime = 'application/zip';
       size = metadata.size;
     } else if (compress === 'brotli') {
-      // Compress to brotli
       const brotliPath = tempPath + '.br';
       await new Promise((resolve, reject) => {
         const input = fs.createReadStream(tempPath);
@@ -120,41 +128,36 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         output.on('error', reject);
       });
       fs.unlinkSync(tempPath);
-      
-      // Upload to GCS
       gcsObjectKey += '.br';
       const fileBuffer = fs.readFileSync(brotliPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/x-brotli');
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(brotliPath); // Clean up local file
-      
+      fs.unlinkSync(brotliPath);
       compressionType = 'brotli';
       finalMime = 'application/x-brotli';
       size = metadata.size;
     } else {
-      // No compression, just upload directly
       gcsObjectKey += path.extname(originalname);
       const fileBuffer = fs.readFileSync(tempPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(tempPath); // Clean up local file
+      fs.unlinkSync(tempPath);
       size = metadata.size;
     }
 
-    // Save new file version entry
     meta[id] = {
       id,
       originalname,
       mimetype,
-      gcsObjectKey, // Store GCS object key instead of local path
-      storageProvider: 'gcs', // Mark as stored in GCS
+      gcsObjectKey,
+      storageProvider: 'gcs',
       compressionType,
       finalMime,
       category,
       version,
       uploadedAt,
       modifiedAt,
-      size // Store the file size from GCS
+      size
     };
     saveMeta(meta);
     res.json({ message: 'Upload complete', fileId: id });
@@ -163,29 +166,24 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-// Download endpoint (using GCS and handling decompression)
+// Download endpoint
 app.get('/api/files/download/:fileId', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
     const meta = loadMeta();
     const file = meta[fileId];
-    
     if (!file) return res.status(404).json({ message: 'File not found' });
-    
-    // Set appropriate headers for download
+
     res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
     res.setHeader('Content-Type', file.mimetype);
-    
-    // Get download stream from GCS
-  const readStream = getGCSDownloadStream(file.gcsObjectKey);
 
-    
-    readStream.on('error', (err) => {
+    const readStream = getGCSDownloadStream(file.gcsObjectKey);
+
+    readStream.on('error', err => {
       console.error('GCS read error:', err);
       res.status(500).json({ message: 'File read error', error: err.message });
     });
-    
-    // Handle decompression based on compression type
+
     if (file.compressionType === 'zip') {
       const unzipper = require('unzipper');
       const unzipStream = readStream.pipe(unzipper.ParseOne());
@@ -202,7 +200,6 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
       });
       brotliStream.pipe(res);
     } else {
-      // No compression, just pipe the file directly
       readStream.pipe(res);
     }
   } catch (err) {
@@ -211,11 +208,10 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
   }
 });
 
-// List files (for testing/demo)
+// List files endpoint
 app.get('/api/files', auth, async (req, res) => {
   try {
     const meta = loadMeta();
-    // Group by (name, category)
     const groups = {};
     Object.values(meta).forEach(f => {
       const key = `${f.originalname}||${f.category || 'Others'}`;
@@ -223,17 +219,13 @@ app.get('/api/files', auth, async (req, res) => {
       groups[key].push(f);
     });
 
-    // For each group, pick latest for row and attach history
     const files = await Promise.all(
       Object.values(groups).map(async arr => {
         arr.sort((a, b) => (b.version || 1) - (a.version || 1));
         const latest = arr[0];
-        const ext = latest.originalname.includes('.')
-          ? latest.originalname.split('.').pop()
-          : '';
+        const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
         const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
 
-        // Get file size from GCS for GCS-stored files
         let size = 0;
         if (latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
           try {
@@ -248,7 +240,7 @@ app.get('/api/files', auth, async (req, res) => {
           id: latest.id,
           name,
           fileType: ext,
-          size: (size / 1024).toFixed(1), // KB
+          size: (size / 1024).toFixed(1),
           compressionType: latest.compressionType,
           category: latest.category || 'Others',
           version: latest.version || 1,
@@ -268,12 +260,10 @@ app.get('/api/files', auth, async (req, res) => {
   }
 });
 
-
 // Download a specific version by number
 app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
   const { fileKey, version } = req.params;
   const meta = loadMeta();
-  // fileKey can be an id or a latest id; we search by matching group of that id
   const all = Object.values(meta);
   const current = all.find(f => f.id === fileKey) || all.find(f => f.id === fileKey);
   if (!current) return res.status(404).json({ message: 'File not found' });
@@ -283,8 +273,8 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
   res.redirect(`/api/files/download/${target.id}`);
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  // No demo JWT or error logging
-  // Server running
+  console.log(`Server running on port ${PORT}`);
 });
+

@@ -9,7 +9,7 @@ function Login({ onLogin }) {
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch('/api/files/login', {
+      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, password })

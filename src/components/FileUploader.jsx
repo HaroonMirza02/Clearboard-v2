@@ -18,15 +18,16 @@ function FileUploader() {
       const zipped = await zipFile(file)
       // Prepare form data
       const formData = new FormData()
-      formData.append('file', zipped)
-      formData.append('filename', zipped.name)
-      formData.append('contentType', zipped.type)
-      formData.append('size', zipped.size)
-      formData.append('category', 'research') // or get from UI
-      formData.append('compress', 'zip')
+  formData.append('file', zipped)
+  formData.append('filename', zipped.name)
+  formData.append('contentType', zipped.type)
+  formData.append('originalContentType', file.type)
+  formData.append('size', zipped.size)
+  formData.append('category', 'research') // or get from UI
+  formData.append('compress', 'zip')
       // Send to backend
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/files/upload', {
+      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/upload', {
         method: 'POST',
         body: formData,
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -43,9 +44,9 @@ function FileUploader() {
   return (
     <div className="cb-uploader">
       <input ref={inputRef} type="file" onChange={onChange} hidden />
-      {/* <button className="cb-btn" onClick={onPick} disabled={isUploading}>
+      <button className="cb-btn" onClick={onPick} disabled={isUploading}>
         {isUploading ? 'Uploading...' : 'Upload New File'}
-      </button> */}
+      </button>
       {isUploading && (
         <div className="cb-loader" aria-label="uploading" />
       )}
