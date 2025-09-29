@@ -7,30 +7,33 @@ const morgan = require('morgan');
 const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
-const cors = require('cors'); // added for CORS
+const cors = require('cors');
 const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
 
 const app = express();
 
 // Enable CORS for frontend origins
-
 app.use(cors({
-  origin: ["https://fifth-flame-472409-q0.web.app"], // your frontend domain
+  origin: ["https://fifth-flame-472409-q0.web.app"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.options('*', cors()); // enable preflight for all routes
-app.use(express.json());
-app.use(morgan('dev'));
-
+app.options('*', cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
 const upload = multer({ dest: 'uploads/' });
 
-// Hardcoded credentials and secret
-const DEMO_USER = { userId: 'demo', password: 'password123', id: 'demo-user-1' };
+// Multi-user credentials
+const USERS = [
+  { userId: 'HaroonMirza', password: 'password123', id: 'user-1', role: 'user' },
+  { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user' },
+  { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user' },
+  { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user' },
+  { userId: 'AliZakaria', password: 'admin123', id: 'admin-1', role: 'admin' }
+];
+
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
 
 // Metadata file
@@ -46,9 +49,10 @@ function saveMeta(meta) {
 // Login endpoint (returns JWT)
 app.post('/api/login', (req, res) => {
   const { userId, password } = req.body;
-  if (userId === DEMO_USER.userId && password === DEMO_USER.password) {
-    const token = jwt.sign({ id: DEMO_USER.id, userId: DEMO_USER.userId }, JWT_SECRET, { expiresIn: '1d' });
-    return res.json({ token });
+  const user = USERS.find(u => u.userId === userId && u.password === password);
+  if (user) {
+    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    return res.json({ token, role: user.role });
   }
   res.status(401).json({ message: 'Invalid credentials' });
 });
@@ -77,8 +81,15 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     const { compress = 'none', category = 'Others' } = req.body;
     const meta = loadMeta();
 
-    // Versioning
-    const sameGroup = Object.values(meta).filter(f => f.originalname === originalname && (f.category || 'Others') === category);
+    // File owner is the current user
+    const ownerId = req.user.id;
+
+    // Versioning - filter by owner
+    const sameGroup = Object.values(meta).filter(f => 
+      f.originalname === originalname && 
+      (f.category || 'Others') === category &&
+      f.ownerId === ownerId
+    );
     const nowIso = new Date().toISOString();
     const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
     const firstUploadedAt = sameGroup.length
@@ -89,7 +100,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       : nowIso;
 
     const version = maxVersion + 1;
-    const uploadedAt = firstUploadedAt; // preserve earliest
+    const uploadedAt = firstUploadedAt;
     const modifiedAt = version > 1 ? nowIso : null;
 
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -157,7 +168,9 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       version,
       uploadedAt,
       modifiedAt,
-      size
+      size,
+      ownerId,
+      ownerUserId: req.user.userId
     };
     saveMeta(meta);
     res.json({ message: 'Upload complete', fileId: id });
@@ -173,6 +186,11 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
     const meta = loadMeta();
     const file = meta[fileId];
     if (!file) return res.status(404).json({ message: 'File not found' });
+
+    // Authorization check
+    if (req.user.role !== 'admin' && file.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
     res.setHeader('Content-Type', file.mimetype);
@@ -212,9 +230,16 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 app.get('/api/files', auth, async (req, res) => {
   try {
     const meta = loadMeta();
+    const isAdmin = req.user.role === 'admin';
+    
+    // Filter files based on user role
+    const userFiles = Object.values(meta).filter(f => 
+      isAdmin || f.ownerId === req.user.id
+    );
+
     const groups = {};
-    Object.values(meta).forEach(f => {
-      const key = `${f.originalname}||${f.category || 'Others'}`;
+    userFiles.forEach(f => {
+      const key = `${f.originalname}||${f.category || 'Others'}||${f.ownerId}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(f);
     });
@@ -224,7 +249,7 @@ app.get('/api/files', auth, async (req, res) => {
         arr.sort((a, b) => (b.version || 1) - (a.version || 1));
         const latest = arr[0];
         const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
-        const name = latest.originalname.replace(new RegExp(`\.${ext}$`), '');
+        const name = latest.originalname.replace(new RegExp(`\\.${ext}$`), '');
 
         let size = 0;
         if (latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
@@ -248,7 +273,8 @@ app.get('/api/files', auth, async (req, res) => {
           modifiedAt: latest.modifiedAt,
           versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
           download: `/api/files/download/${latest.id}`,
-          storageProvider: latest.storageProvider || 'local'
+          storageProvider: latest.storageProvider || 'local',
+          ownerUserId: latest.ownerUserId || 'unknown'
         };
       })
     );
@@ -265,9 +291,19 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
   const { fileKey, version } = req.params;
   const meta = loadMeta();
   const all = Object.values(meta);
-  const current = all.find(f => f.id === fileKey) || all.find(f => f.id === fileKey);
+  const current = all.find(f => f.id === fileKey);
   if (!current) return res.status(404).json({ message: 'File not found' });
-  const group = all.filter(f => f.originalname === current.originalname && (f.category || 'Others') === (current.category || 'Others'));
+  
+  // Authorization check
+  if (req.user.role !== 'admin' && current.ownerId !== req.user.id) {
+    return res.status(403).json({ message: 'Access denied' });
+  }
+
+  const group = all.filter(f => 
+    f.originalname === current.originalname && 
+    (f.category || 'Others') === (current.category || 'Others') &&
+    f.ownerId === current.ownerId
+  );
   const target = group.find(f => (f.version || 1) === Number(version));
   if (!target) return res.status(404).json({ message: 'Requested version not found' });
   res.redirect(`/api/files/download/${target.id}`);
@@ -277,4 +313,3 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-

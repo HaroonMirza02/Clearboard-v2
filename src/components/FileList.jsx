@@ -37,9 +37,11 @@ const thStyle = { background: '#f1f5f9', color: '#0f172a', fontWeight: 700, padd
 const tdStyle = { padding: '12px 14px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle', fontSize: 14, color: '#0f172a' };
 const zebra = idx => ({ background: idx % 2 === 0 ? '#fff' : '#fafbff' });
 const pill = { padding: '4px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12, display: 'inline-block' };
+const adminBadge = { padding: '6px 12px', borderRadius: 6, background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 12, display: 'inline-block', marginLeft: 12 };
 
 function FileList() {
   const [token, setToken] = useState('');
+  const [userRole, setUserRole] = useState('');
   const [login, setLogin] = useState({ userId: '', password: '' });
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -55,10 +57,15 @@ function FileList() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(login) });
+      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/login', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(login) 
+      });
       if (!res.ok) throw new Error('Login failed');
       const data = await res.json();
       setToken(data.token);
+      setUserRole(data.role);
       setLogin({ userId: '', password: '' });
     } catch (err) { setError('Login failed'); }
     setLoading(false);
@@ -67,11 +74,12 @@ function FileList() {
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    fetch('/api/files', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('https://backend-app-602854698306.asia-south1.run.app/api/files', { 
+      headers: { Authorization: `Bearer ${token}` } 
+    })
       .then(res => { if (!res.ok) throw new Error('Failed to fetch files'); return res.json(); })
       .then(data => {
         setFiles(data);
-        // Initialize selected version per row to latest
         const init = {};
         data.forEach(f => { init[f.id] = f.version; });
         setSelectedVersions(init);
@@ -90,11 +98,17 @@ function FileList() {
     form.append('compress', compress);
     form.append('category', category === 'OtherText' ? customCategory : category);
     try {
-      const res = await fetch('/api/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/upload', { 
+        method: 'POST', 
+        headers: { Authorization: `Bearer ${token}` }, 
+        body: form 
+      });
       if (!res.ok) throw new Error('Upload failed');
       await res.json();
       setFile(null);
-      const filesRes = await fetch('/api/files', { headers: { Authorization: `Bearer ${token}` } });
+      const filesRes = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files', { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
       const data = await filesRes.json();
       setFiles(data);
       const init = {};
@@ -107,7 +121,9 @@ function FileList() {
   const handleDownload = async (fileId, name, fileType, version) => {
     setError('');
     try {
-      const urlPath = version ? `/api/files/download/${fileId}/version/${version}` : `/api/files/download/${fileId}`;
+      const urlPath = version ? 
+        `https://backend-app-602854698306.asia-south1.run.app/api/files/download/${fileId}/version/${version}` : 
+        `https://backend-app-602854698306.asia-south1.run.app/api/files/download/${fileId}`;
       const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
@@ -145,7 +161,10 @@ function FileList() {
     <div style={pageStyle}>
       <div style={container}>
         <div style={{ ...sectionCard, marginBottom: 20 }}>
-          <h2 style={{ margin: 0, color: '#1f2a37' }}>Upload a File</h2>
+          <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
+            Upload a File
+            {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
+          </h2>
           <div style={{ marginTop: 12 }}>
             <form onSubmit={handleUpload}>
               <div style={uploadGrid}>
@@ -189,6 +208,7 @@ function FileList() {
                 <th style={thStyle}>Compression</th>
                 <th style={thStyle}>Category</th>
                 <th style={thStyle}>Version</th>
+                {userRole === 'admin' && <th style={thStyle}>Owner</th>}
                 <th style={thStyle}>Uploaded At</th>
                 <th style={thStyle}>Modified At</th>
                 <th style={thStyle}>Download</th>
@@ -213,6 +233,13 @@ function FileList() {
                       ))}
                     </select>
                   </td>
+                  {userRole === 'admin' && (
+                    <td style={tdStyle}>
+                      <span style={{ ...pill, background: '#fef3c7', color: '#92400e' }}>
+                        {f.ownerUserId}
+                      </span>
+                    </td>
+                  )}
                   <td style={tdStyle}>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : '-'}</td>
                   <td style={tdStyle}>{f.modifiedAt ? new Date(f.modifiedAt).toLocaleString() : '-'}</td>
                   <td style={tdStyle}>

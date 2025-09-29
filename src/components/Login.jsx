@@ -9,7 +9,7 @@ function Login({ onLogin }) {
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/login', {
+      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, password })
@@ -17,6 +17,7 @@ function Login({ onLogin }) {
       if (!res.ok) throw new Error('Invalid credentials');
       const data = await res.json();
       localStorage.setItem('token', data.token);
+      localStorage.setItem('role', data.role); // Store role as well
       onLogin && onLogin();
     } catch (err) {
       setError('Invalid credentials');
