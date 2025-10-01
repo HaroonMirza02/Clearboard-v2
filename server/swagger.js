@@ -10,7 +10,7 @@ const options = {
       description: 'API documentation for ClearBoard backend',
     },
     servers: [
-      { url: 'http://localhost:5000' }
+      { url: 'http://localhost:8080' }
     ],
   },
   apis: ['./routes/*.js'], // Path to the API docs in your route files

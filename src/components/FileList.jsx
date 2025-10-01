@@ -24,6 +24,7 @@ const brandSub = { fontSize: 15, color: '#64748b', marginBottom: 8 };
 const label = { fontWeight: 600, color: '#334155', marginBottom: 6, display: 'block' };
 const input = { width: '100%', padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 15, outline: 'none' };
 const primaryBtn = { width: '100%', padding: 12, borderRadius: 10, background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 16, border: 'none', cursor: 'pointer' };
+const secondaryBtn = { width: '100%', padding: 12, borderRadius: 10, background: 'transparent', color: '#2563eb', fontWeight: 600, fontSize: 14, border: '2px solid #2563eb', cursor: 'pointer', marginTop: 8 };
 
 const container = { maxWidth: 1180, margin: '0 auto' };
 const sectionCard = { background: '#fff', borderRadius: 14, boxShadow: '0 6px 28px rgba(16,24,40,0.06)', padding: 20 };
@@ -38,36 +39,62 @@ const tdStyle = { padding: '12px 14px', borderBottom: '1px solid #f1f5f9', verti
 const zebra = idx => ({ background: idx % 2 === 0 ? '#fff' : '#fafbff' });
 const pill = { padding: '4px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12, display: 'inline-block' };
 const adminBadge = { padding: '6px 12px', borderRadius: 6, background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 12, display: 'inline-block', marginLeft: 12 };
+const toggleText = { textAlign: 'center', marginTop: 12, color: '#64748b', fontSize: 14 };
+const toggleLink = { color: '#2563eb', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' };
+const successMsg = { background: '#d1fae5', color: '#065f46', padding: 10, borderRadius: 8, marginTop: 10, fontSize: 14, textAlign: 'center' };
+const errorMsg = { background: '#fee2e2', color: '#991b1b', padding: 10, borderRadius: 8, marginTop: 10, fontSize: 14, textAlign: 'center' };
 
 function FileList() {
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
-  const [login, setLogin] = useState({ userId: '', password: '' });
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [isSignup, setIsSignup] = useState(false);
+  const [authForm, setAuthForm] = useState({ userId: '', password: '', email: '' });
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [file, setFile] = useState(null);
   const [compress, setCompress] = useState('none');
   const [category, setCategory] = useState('Others');
   const [customCategory, setCustomCategory] = useState('');
   const [selectedVersions, setSelectedVersions] = useState({});
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
+
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/login', { 
+      const endpoint = isSignup ? 'signup' : 'login';
+      const body = isSignup 
+        ? { userId: authForm.userId, password: authForm.password, email: authForm.email }
+        : { userId: authForm.userId, password: authForm.password };
+
+      const res = await fetch(`https://backend-app-602854698306.asia-south1.run.app/api/${endpoint}`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(login) 
+        body: JSON.stringify(body) 
       });
-      if (!res.ok) throw new Error('Login failed');
+
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || `${isSignup ? 'Signup' : 'Login'} failed`);
+      }
+
+      if (isSignup) {
+        setSuccess('Account created successfully! Logging you in...');
+      }
+
       setToken(data.token);
       setUserRole(data.role);
-      setLogin({ userId: '', password: '' });
-    } catch (err) { setError('Login failed'); }
+      setCurrentUserId(data.userId);
+      setAuthForm({ userId: '', password: '', email: '' });
+    } catch (err) { 
+      setError(err.message);
+    }
     setLoading(false);
   };
 
@@ -92,6 +119,7 @@ function FileList() {
     e.preventDefault();
     if (!file) return;
     setError('');
+    setSuccess('');
     setLoading(true);
     const form = new FormData();
     form.append('file', file);
@@ -106,6 +134,7 @@ function FileList() {
       if (!res.ok) throw new Error('Upload failed');
       await res.json();
       setFile(null);
+      setSuccess('File uploaded successfully!');
       const filesRes = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files', { 
         headers: { Authorization: `Bearer ${token}` } 
       });
@@ -138,20 +167,74 @@ function FileList() {
     } catch (err) { setError('Download failed'); }
   };
 
+  const handleLogout = () => {
+    setToken('');
+    setUserRole('');
+    setCurrentUserId('');
+    setFiles([]);
+    setSelectedVersions({});
+    setAuthForm({ userId: '', password: '', email: '' });
+    setError('');
+    setSuccess('');
+  };
+
   if (!token) {
     return (
       <div style={pageStyle}>
         <div style={cardStyle}>
           <h1 style={brandTitle}>ClearBoard</h1>
           <div style={brandSub}>Secure File Portal</div>
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleAuth}>
             <label style={label}>User ID</label>
-            <input type="text" placeholder="User ID" value={login.userId} onChange={e => setLogin({ ...login, userId: e.target.value })} required style={input} />
+            <input 
+              type="text" 
+              placeholder="Enter your user ID" 
+              value={authForm.userId} 
+              onChange={e => setAuthForm({ ...authForm, userId: e.target.value })} 
+              required 
+              style={input} 
+            />
             <label style={{ ...label, marginTop: 10 }}>Password</label>
-            <input type="password" placeholder="Password" value={login.password} onChange={e => setLogin({ ...login, password: e.target.value })} required style={input} />
-            <button type="submit" disabled={loading} style={{ ...primaryBtn, marginTop: 12 }}>{loading ? 'Signing in...' : 'Login'}</button>
-            {error && <div style={{ color: 'crimson', marginTop: 10, textAlign: 'center' }}>{error}</div>}
+            <input 
+              type="password" 
+              placeholder="Enter your password" 
+              value={authForm.password} 
+              onChange={e => setAuthForm({ ...authForm, password: e.target.value })} 
+              required 
+              style={input} 
+            />
+            {isSignup && (
+              <>
+                <label style={{ ...label, marginTop: 10 }}>Email (Optional)</label>
+                <input 
+                  type="email" 
+                  placeholder="Enter your email" 
+                  value={authForm.email} 
+                  onChange={e => setAuthForm({ ...authForm, email: e.target.value })} 
+                  style={input} 
+                />
+              </>
+            )}
+            <button 
+              type="submit" 
+              disabled={loading} 
+              style={{ ...primaryBtn, marginTop: 12, opacity: loading ? 0.6 : 1 }}
+            >
+              {loading ? (isSignup ? 'Creating Account...' : 'Signing in...') : (isSignup ? 'Sign Up' : 'Login')}
+            </button>
+            {error && <div style={errorMsg}>{error}</div>}
+            {success && <div style={successMsg}>{success}</div>}
           </form>
+          <div style={toggleText}>
+            {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+            <span style={toggleLink} onClick={() => {
+              setIsSignup(!isSignup);
+              setError('');
+              setSuccess('');
+            }}>
+              {isSignup ? 'Login here' : 'Sign up here'}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -161,10 +244,32 @@ function FileList() {
     <div style={pageStyle}>
       <div style={container}>
         <div style={{ ...sectionCard, marginBottom: 20 }}>
-          <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
-            Upload a File
-            {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
+              Upload a File
+              {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ color: '#64748b', fontSize: 14 }}>
+                Welcome, <strong style={{ color: '#1f2a37' }}>{currentUserId}</strong>
+              </span>
+              <button 
+                onClick={handleLogout}
+                style={{ 
+                  padding: '8px 16px', 
+                  borderRadius: 8, 
+                  background: '#ef4444', 
+                  color: '#fff', 
+                  fontWeight: 600, 
+                  border: 'none', 
+                  cursor: 'pointer',
+                  fontSize: 13
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
           <div style={{ marginTop: 12 }}>
             <form onSubmit={handleUpload}>
               <div style={uploadGrid}>
@@ -191,10 +296,14 @@ function FileList() {
                   </select>
                 </div>
                 <div>
-                  <button type="submit" disabled={loading || !file} style={smallBtn}>{loading ? 'Uploading...' : 'Upload'}</button>
+                  <button type="submit" disabled={loading || !file} style={{ ...smallBtn, opacity: (loading || !file) ? 0.6 : 1 }}>
+                    {loading ? 'Uploading...' : 'Upload'}
+                  </button>
                 </div>
               </div>
             </form>
+            {error && <div style={{ ...errorMsg, marginTop: 12 }}>{error}</div>}
+            {success && <div style={{ ...successMsg, marginTop: 12 }}>{success}</div>}
           </div>
         </div>
 
@@ -215,38 +324,46 @@ function FileList() {
               </tr>
             </thead>
             <tbody>
-              {files.map((f, idx) => (
-                <tr key={f.id} style={zebra(idx)}>
-                  <td style={tdStyle}>{f.name}</td>
-                  <td style={tdStyle}><span style={pill}>{f.fileType || '-'}</span></td>
-                  <td style={tdStyle}>{f.size}</td>
-                  <td style={tdStyle}>{f.compressionType}</td>
-                  <td style={tdStyle}>{f.category}</td>
-                  <td style={tdStyle}>
-                    <select
-                      value={selectedVersions[f.id] ?? f.version}
-                      onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
-                      style={{ ...select, padding: '8px 10px', width: 120 }}
-                    >
-                      {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
-                        <option key={v.version} value={v.version}>v{v.version}</option>
-                      ))}
-                    </select>
-                  </td>
-                  {userRole === 'admin' && (
-                    <td style={tdStyle}>
-                      <span style={{ ...pill, background: '#fef3c7', color: '#92400e' }}>
-                        {f.ownerUserId}
-                      </span>
-                    </td>
-                  )}
-                  <td style={tdStyle}>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : '-'}</td>
-                  <td style={tdStyle}>{f.modifiedAt ? new Date(f.modifiedAt).toLocaleString() : '-'}</td>
-                  <td style={tdStyle}>
-                    <button onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} style={{ ...smallBtn, padding: '8px 14px' }}>Download</button>
+              {files.length === 0 ? (
+                <tr>
+                  <td colSpan={userRole === 'admin' ? 10 : 9} style={{ ...tdStyle, textAlign: 'center', color: '#64748b', padding: 40 }}>
+                    No files uploaded yet. Upload your first file above!
                   </td>
                 </tr>
-              ))}
+              ) : (
+                files.map((f, idx) => (
+                  <tr key={f.id} style={zebra(idx)}>
+                    <td style={tdStyle}>{f.name}</td>
+                    <td style={tdStyle}><span style={pill}>{f.fileType || '-'}</span></td>
+                    <td style={tdStyle}>{f.size}</td>
+                    <td style={tdStyle}>{f.compressionType}</td>
+                    <td style={tdStyle}>{f.category}</td>
+                    <td style={tdStyle}>
+                      <select
+                        value={selectedVersions[f.id] ?? f.version}
+                        onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
+                        style={{ ...select, padding: '8px 10px', width: 120 }}
+                      >
+                        {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
+                          <option key={v.version} value={v.version}>v{v.version}</option>
+                        ))}
+                      </select>
+                    </td>
+                    {userRole === 'admin' && (
+                      <td style={tdStyle}>
+                        <span style={{ ...pill, background: '#fef3c7', color: '#92400e' }}>
+                          {f.ownerUserId}
+                        </span>
+                      </td>
+                    )}
+                    <td style={tdStyle}>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : '-'}</td>
+                    <td style={tdStyle}>{f.modifiedAt ? new Date(f.modifiedAt).toLocaleString() : '-'}</td>
+                    <td style={tdStyle}>
+                      <button onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} style={{ ...smallBtn, padding: '8px 14px' }}>Download</button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

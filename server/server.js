@@ -8,6 +8,7 @@ const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
 const cors = require('cors');
+const bcrypt = require('bcrypt');
 const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
 
 const app = express();
@@ -23,10 +24,16 @@ app.options('*', cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
-const upload = multer({ dest: 'uploads/' });
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
-// Multi-user credentials
-const USERS = [
+const upload = multer({ dest: UPLOADS_DIR });
+
+// Hardcoded users (legacy)
+const HARDCODED_USERS = [
   { userId: 'HaroonMirza', password: 'password123', id: 'user-1', role: 'user' },
   { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user' },
   { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user' },
@@ -36,25 +43,180 @@ const USERS = [
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
 
-// Metadata file
+// Metadata and users files
 const META_PATH = path.join(__dirname, 'uploads', 'filemeta.json');
+const USERS_PATH = path.join(__dirname, 'uploads', 'users.json');
+
 function loadMeta() {
-  if (!fs.existsSync(META_PATH)) return {};
-  return JSON.parse(fs.readFileSync(META_PATH, 'utf8'));
-}
-function saveMeta(meta) {
-  fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2));
+  try {
+    if (!fs.existsSync(META_PATH)) {
+      console.log('Creating new filemeta.json');
+      saveMeta({});
+      return {};
+    }
+    const data = fs.readFileSync(META_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Error loading metadata:', err);
+    return {};
+  }
 }
 
-// Login endpoint (returns JWT)
-app.post('/api/login', (req, res) => {
-  const { userId, password } = req.body;
-  const user = USERS.find(u => u.userId === userId && u.password === password);
-  if (user) {
-    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-    return res.json({ token, role: user.role });
+function saveMeta(meta) {
+  try {
+    const dir = path.dirname(META_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2), 'utf8');
+    console.log('Metadata saved successfully');
+  } catch (err) {
+    console.error('Error saving metadata:', err);
+    throw err;
   }
-  res.status(401).json({ message: 'Invalid credentials' });
+}
+
+function loadUsers() {
+  try {
+    if (!fs.existsSync(USERS_PATH)) {
+      console.log('Creating new users.json');
+      saveUsers([]);
+      return [];
+    }
+    const data = fs.readFileSync(USERS_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Error loading users:', err);
+    return [];
+  }
+}
+
+function saveUsers(users) {
+  try {
+    const dir = path.dirname(USERS_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(USERS_PATH, JSON.stringify(users, null, 2), 'utf8');
+    console.log('Users saved successfully');
+  } catch (err) {
+    console.error('Error saving users:', err);
+    throw err;
+  }
+}
+
+// Get all users (hardcoded + registered)
+function getAllUsers() {
+  const registeredUsers = loadUsers();
+  return [...HARDCODED_USERS, ...registeredUsers];
+}
+
+// Signup endpoint
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { userId, password, email } = req.body;
+
+    // Validation
+    if (!userId || !password) {
+      return res.status(400).json({ message: 'User ID and password are required' });
+    }
+
+    if (userId.length < 3) {
+      return res.status(400).json({ message: 'User ID must be at least 3 characters' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Check if user already exists
+    const allUsers = getAllUsers();
+    const existingUser = allUsers.find(u => u.userId.toLowerCase() === userId.toLowerCase());
+    
+    if (existingUser) {
+      return res.status(409).json({ message: 'User ID already exists' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Generate unique ID
+    const id = 'user-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+    // Create new user
+    const newUser = {
+      userId,
+      password: hashedPassword,
+      email: email || null,
+      id,
+      role: 'user',
+      createdAt: new Date().toISOString()
+    };
+
+    // Save to registered users
+    const registeredUsers = loadUsers();
+    registeredUsers.push(newUser);
+    saveUsers(registeredUsers);
+
+    console.log(`New user registered: ${userId} (${id})`);
+
+    // Generate token
+    const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role }, JWT_SECRET, { expiresIn: '1d' });
+
+    res.status(201).json({ 
+      message: 'User registered successfully',
+      token, 
+      role: newUser.role,
+      userId: newUser.userId
+    });
+
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ message: 'Signup failed', error: err.message });
+  }
+});
+
+// Login endpoint (returns JWT)
+app.post('/api/login', async (req, res) => {
+  try {
+    const { userId, password } = req.body;
+
+    if (!userId || !password) {
+      return res.status(400).json({ message: 'User ID and password are required' });
+    }
+
+    const allUsers = getAllUsers();
+    const user = allUsers.find(u => u.userId === userId);
+
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Check password
+    let isValidPassword = false;
+    
+    // For hardcoded users (plain text passwords)
+    if (HARDCODED_USERS.some(u => u.userId === userId)) {
+      isValidPassword = user.password === password;
+    } else {
+      // For registered users (hashed passwords)
+      isValidPassword = await bcrypt.compare(password, user.password);
+    }
+
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    
+    console.log(`User logged in: ${userId} (${user.role})`);
+    
+    res.json({ token, role: user.role, userId: user.userId });
+
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ message: 'Login failed', error: err.message });
+  }
 });
 
 // JWT auth middleware
@@ -75,14 +237,25 @@ function auth(req, res, next) {
 
 // Upload endpoint (with optional compression)
 app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
+  let tempPath = null;
+  let processedPath = null;
+  
   try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    const { originalname, mimetype, path: tempPath } = req.file;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+    
+    const { originalname, mimetype, path: filePath } = req.file;
+    tempPath = filePath;
     const { compress = 'none', category = 'Others' } = req.body;
+    
+    console.log(`Upload request: ${originalname}, compress: ${compress}, category: ${category}, user: ${req.user.userId}`);
+    
     const meta = loadMeta();
 
     // File owner is the current user
     const ownerId = req.user.id;
+    const ownerUserId = req.user.userId;
 
     // Versioning - filter by owner
     const sameGroup = Object.values(meta).filter(f => 
@@ -90,6 +263,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       (f.category || 'Others') === category &&
       f.ownerId === ownerId
     );
+    
     const nowIso = new Date().toISOString();
     const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
     const firstUploadedAt = sameGroup.length
@@ -109,8 +283,13 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     let finalMime = mimetype;
     let size = 0;
 
+    console.log(`Processing file ID: ${id}, version: ${version}`);
+
+    // Handle compression and upload to GCS
     if (compress === 'zip') {
       const zipPath = tempPath + '.zip';
+      processedPath = zipPath;
+      
       await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
         const archive = archiver('zip');
@@ -120,17 +299,19 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         archive.file(tempPath, { name: originalname });
         archive.finalize();
       });
-      fs.unlinkSync(tempPath);
+      
       gcsObjectKey += '.zip';
       const fileBuffer = fs.readFileSync(zipPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/zip');
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(zipPath);
+      size = metadata.size;
       compressionType = 'zip';
       finalMime = 'application/zip';
-      size = metadata.size;
+      
     } else if (compress === 'brotli') {
       const brotliPath = tempPath + '.br';
+      processedPath = brotliPath;
+      
       await new Promise((resolve, reject) => {
         const input = fs.createReadStream(tempPath);
         const output = fs.createWriteStream(brotliPath);
@@ -138,23 +319,24 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
         output.on('finish', resolve);
         output.on('error', reject);
       });
-      fs.unlinkSync(tempPath);
+      
       gcsObjectKey += '.br';
       const fileBuffer = fs.readFileSync(brotliPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, 'application/x-brotli');
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(brotliPath);
+      size = metadata.size;
       compressionType = 'brotli';
       finalMime = 'application/x-brotli';
-      size = metadata.size;
+      
     } else {
       gcsObjectKey += path.extname(originalname);
       const fileBuffer = fs.readFileSync(tempPath);
       await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
       const metadata = await getFileMetadata(gcsObjectKey);
-      fs.unlinkSync(tempPath);
       size = metadata.size;
     }
+
+    console.log(`File uploaded to GCS: ${gcsObjectKey}, size: ${size}`);
 
     meta[id] = {
       id,
@@ -170,12 +352,50 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       modifiedAt,
       size,
       ownerId,
-      ownerUserId: req.user.userId
+      ownerUserId
     };
+    
     saveMeta(meta);
-    res.json({ message: 'Upload complete', fileId: id });
+    console.log(`Metadata saved for file: ${id}`);
+
+    // Clean up temporary files
+    try {
+      if (tempPath && fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+      if (processedPath && fs.existsSync(processedPath)) {
+        fs.unlinkSync(processedPath);
+      }
+    } catch (cleanupErr) {
+      console.error('Error cleaning up temp files:', cleanupErr);
+    }
+
+    res.json({ 
+      message: 'Upload complete', 
+      fileId: id,
+      version,
+      category,
+      size
+    });
+    
   } catch (err) {
-    res.status(500).json({ message: 'Upload failed', error: err.message });
+    console.error('Upload error:', err);
+    
+    try {
+      if (tempPath && fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+      if (processedPath && fs.existsSync(processedPath)) {
+        fs.unlinkSync(processedPath);
+      }
+    } catch (cleanupErr) {
+      console.error('Error cleaning up after failure:', cleanupErr);
+    }
+    
+    res.status(500).json({ 
+      message: 'Upload failed', 
+      error: err.message 
+    });
   }
 });
 
@@ -185,12 +405,17 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
     const { fileId } = req.params;
     const meta = loadMeta();
     const file = meta[fileId];
-    if (!file) return res.status(404).json({ message: 'File not found' });
+    
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
 
     // Authorization check
     if (req.user.role !== 'admin' && file.ownerId !== req.user.id) {
       return res.status(403).json({ message: 'Access denied' });
     }
+
+    console.log(`Download request for: ${file.originalname} (${fileId}) by ${req.user.userId}`);
 
     res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
     res.setHeader('Content-Type', file.mimetype);
@@ -199,7 +424,9 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 
     readStream.on('error', err => {
       console.error('GCS read error:', err);
-      res.status(500).json({ message: 'File read error', error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'File read error', error: err.message });
+      }
     });
 
     if (file.compressionType === 'zip') {
@@ -207,14 +434,18 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
       const unzipStream = readStream.pipe(unzipper.ParseOne());
       unzipStream.on('error', err => {
         console.error('Zip decompression error:', err);
-        res.status(500).json({ message: 'Decompression error', error: err.message });
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Decompression error', error: err.message });
+        }
       });
       unzipStream.pipe(res);
     } else if (file.compressionType === 'brotli') {
       const brotliStream = readStream.pipe(zlib.createBrotliDecompress());
       brotliStream.on('error', err => {
         console.error('Brotli decompression error:', err);
-        res.status(500).json({ message: 'Decompression error', error: err.message });
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Decompression error', error: err.message });
+        }
       });
       brotliStream.pipe(res);
     } else {
@@ -232,10 +463,14 @@ app.get('/api/files', auth, async (req, res) => {
     const meta = loadMeta();
     const isAdmin = req.user.role === 'admin';
     
+    console.log(`List request from user: ${req.user.userId} (${req.user.role})`);
+    
     // Filter files based on user role
     const userFiles = Object.values(meta).filter(f => 
       isAdmin || f.ownerId === req.user.id
     );
+
+    console.log(`Found ${userFiles.length} files for user`);
 
     const groups = {};
     userFiles.forEach(f => {
@@ -251,8 +486,9 @@ app.get('/api/files', auth, async (req, res) => {
         const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
         const name = latest.originalname.replace(new RegExp(`\\.${ext}$`), '');
 
-        let size = 0;
-        if (latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
+        let size = latest.size || 0;
+        
+        if (!size && latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
           try {
             const metadata = await getFileMetadata(latest.gcsObjectKey);
             size = metadata.size;
@@ -288,28 +524,44 @@ app.get('/api/files', auth, async (req, res) => {
 
 // Download a specific version by number
 app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
-  const { fileKey, version } = req.params;
-  const meta = loadMeta();
-  const all = Object.values(meta);
-  const current = all.find(f => f.id === fileKey);
-  if (!current) return res.status(404).json({ message: 'File not found' });
-  
-  // Authorization check
-  if (req.user.role !== 'admin' && current.ownerId !== req.user.id) {
-    return res.status(403).json({ message: 'Access denied' });
-  }
+  try {
+    const { fileKey, version } = req.params;
+    const meta = loadMeta();
+    const all = Object.values(meta);
+    const current = all.find(f => f.id === fileKey);
+    
+    if (!current) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    // Authorization check
+    if (req.user.role !== 'admin' && current.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
-  const group = all.filter(f => 
-    f.originalname === current.originalname && 
-    (f.category || 'Others') === (current.category || 'Others') &&
-    f.ownerId === current.ownerId
-  );
-  const target = group.find(f => (f.version || 1) === Number(version));
-  if (!target) return res.status(404).json({ message: 'Requested version not found' });
-  res.redirect(`/api/files/download/${target.id}`);
+    const group = all.filter(f => 
+      f.originalname === current.originalname && 
+      (f.category || 'Others') === (current.category || 'Others') &&
+      f.ownerId === current.ownerId
+    );
+    
+    const target = group.find(f => (f.version || 1) === Number(version));
+    
+    if (!target) {
+      return res.status(404).json({ message: 'Requested version not found' });
+    }
+    
+    res.redirect(`/api/files/download/${target.id}`);
+  } catch (err) {
+    console.error('Version download error:', err);
+    res.status(500).json({ message: 'Download failed', error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Uploads directory: ${UPLOADS_DIR}`);
+  console.log(`Metadata file: ${META_PATH}`);
+  console.log(`Users file: ${USERS_PATH}`);
 });
