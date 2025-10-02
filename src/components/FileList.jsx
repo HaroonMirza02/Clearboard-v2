@@ -40,11 +40,20 @@ const statSub = { fontSize: 13, color: '#10b981' };
 
 const tableWrap = { ...sectionCard, padding: 0 };
 const tableStyle = { width: '100%', borderCollapse: 'separate', borderSpacing: 0 };
-const thStyle = { background: '#f1f5f9', color: '#0f172a', fontWeight: 700, padding: '12px 14px', textAlign: 'left', borderBottom: '1px solid #e2e8f0', fontSize: 13 };
-const tdStyle = { padding: '12px 14px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle', fontSize: 14, color: '#0f172a' };
+const thStyle = { background: '#fff', color: '#222', fontWeight: 600, padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontSize: 12, letterSpacing: 0.1, verticalAlign: 'middle', height: 32, boxSizing: 'border-box' };
+const tdStyle = { padding: '8px 10px', borderBottom: '1px solid #f3f4f6', verticalAlign: 'middle', fontSize: 12, color: '#222', background: '#fff', height: 32, boxSizing: 'border-box' };
 const zebra = idx => ({ background: idx % 2 === 0 ? '#fff' : '#fafbff' });
 const pill = { padding: '4px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12, display: 'inline-block' };
 const adminBadge = { padding: '6px 12px', borderRadius: 6, background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 12, display: 'inline-block', marginLeft: 12 };
+const userBadge = { 
+  padding: '6px 12px',
+  borderRadius: 6,
+  background: '#e5e7eb',
+  color: '#111827',
+  fontWeight: 600,
+  fontSize: 12,
+  display: 'inline-block'
+};
 
 function FileList() {
   const [token, setToken] = useState('');
@@ -371,67 +380,75 @@ function FileList() {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Name</th>
-                <th style={thStyle}>File Type</th>
+                <th style={thStyle}>File Name</th>
+                <th style={thStyle}>Type</th>
                 <th style={thStyle}>Size (KB)</th>
                 <th style={thStyle}>Compression</th>
                 <th style={thStyle}>Category</th>
                 <th style={thStyle}>Version</th>
                 {userRole === 'admin' && <th style={thStyle}>Owner</th>}
-                <th style={thStyle}>Uploaded At</th>
-                <th style={thStyle}>Modified At</th>
-                <th style={thStyle}>Download</th>
+                <th style={thStyle}>Uploaded</th>
+                <th style={thStyle}>Modified</th>
+                <th style={thStyle}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {files.length === 0 ? (
+              {files.length === 0 && (
                 <tr>
-                  <td 
-                    colSpan={userRole === 'admin' ? 10 : 9} 
-                    style={{ ...tdStyle, textAlign: 'center', padding: '40px', color: '#64748b' }}
-                  >
-                    No files uploaded yet. Upload your first file above!
+                  <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 10 : 9}>
+                    <div style={{ fontSize: 48, marginBottom: 8 }}>📂</div>
+                    No files uploaded yet
                   </td>
                 </tr>
-              ) : (
-                files.map((f, idx) => (
-                  <tr key={f.id} style={zebra(idx)}>
-                    <td style={tdStyle}>{f.name}</td>
-                    <td style={tdStyle}><span style={pill}>{f.fileType || '-'}</span></td>
-                    <td style={tdStyle}>{f.size}</td>
-                    <td style={tdStyle}>{f.compressionType}</td>
-                    <td style={tdStyle}>{f.category}</td>
-                    <td style={tdStyle}>
-                      <select
-                        value={selectedVersions[f.id] ?? f.version}
-                        onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
-                        style={{ ...select, padding: '8px 10px', width: 120 }}
-                      >
-                        {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
-                          <option key={v.version} value={v.version}>v{v.version}</option>
-                        ))}
-                      </select>
-                    </td>
-                    {userRole === 'admin' && (
-                      <td style={tdStyle}>
-                        <span style={{ ...pill, background: '#fef3c7', color: '#92400e' }}>
-                          {f.ownerUserId}
-                        </span>
-                      </td>
-                    )}
-                    <td style={tdStyle}>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : '-'}</td>
-                    <td style={tdStyle}>{f.modifiedAt ? new Date(f.modifiedAt).toLocaleString() : '-'}</td>
-                    <td style={tdStyle}>
-                      <button 
-                        onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} 
-                        style={{ ...smallBtn, padding: '8px 14px' }}
-                      >
-                        Download
-                      </button>
-                    </td>
-                  </tr>
-                ))
               )}
+              {files.map((f, idx) => (
+                <tr key={f.id} style={zebra(idx)}>
+                  <td style={{ ...tdStyle, fontWeight: 500, fontSize: 11 }}>{f.name}</td>
+                  <td style={tdStyle}>
+                    <span style={{ ...pill, background: '#e0e7ff', color: '#4338ca' }}>
+                      {f.fileType || 'N/A'}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>{f.size}</td>
+                  <td style={tdStyle}>
+                    <span style={{ ...pill, background: f.compressionType === 'none' ? '#f1f5f9' : '#dcfce7', color: f.compressionType === 'none' ? '#64748b' : '#166534' }}>
+                      {f.compressionType}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>{f.category}</td>
+                  <td style={tdStyle}>
+                    <select
+                      value={selectedVersions[f.id] ?? f.version}
+                      onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
+                      style={{ ...select, padding: '4px 8px', width: 70, fontSize: 11, height: 24 }}
+                    >
+                      {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
+                        <option key={v.version} value={v.version}>v{v.version}</option>
+                      ))}
+                    </select>
+                  </td>
+                  {userRole === 'admin' && (
+                    <td style={tdStyle}>
+                      <span style={userBadge}>
+                        {f.ownerUserId}
+                      </span>
+                    </td>
+                  )}
+                  <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
+                    {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                    <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
+                      {f.modifiedAt ? new Date(f.modifiedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                  
+                  <td style={tdStyle}>
+                    <button 
+                      onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} 
+                      style={{ ...smallBtn, padding: '4px 10px', fontSize: 11, height: 24 }}
+                    >
+                      Download
+                    </button>
+                  </td>
+                </tr>
+              ))} 
             </tbody>
           </table>
         </div>
@@ -439,5 +456,6 @@ function FileList() {
     </div>
   );
 }
+
 
 export default FileList;
