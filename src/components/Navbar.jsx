@@ -31,80 +31,28 @@ function Navbar() {
     window.location.reload(); // Force re-render to show login screen
   };
 
+  const handleSignIn = () => {
+    navigate('/dashboard');
+  };
+
   return (
     <nav className="cb-navbar">
       <div className="cb-nav-left">
-        <Link to="/" className="cb-brand">ClearBoard</Link>
+        <Link to="/" className="cb-brand">
+          {/* <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="cb-brand-icon">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg> */}
+          ClearBoard
+        </Link>
         <ul className="cb-nav-links">
-          <li><NavLink to="/" end>Home</NavLink></li>
-          <li><NavLink to="/dashboard">Dashboard</NavLink></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#about">About</a></li>
         </ul>
       </div>
       <div className="cb-nav-right">
-        <input className="cb-search" placeholder="Search" />
-        <div className="cb-avatar-wrapper" ref={dropdownRef}>
-          <div 
-            className="cb-avatar" 
-            aria-label="profile"
-            onClick={() => setShowDropdown(!showDropdown)}
-            style={{ cursor: 'pointer' }}
-          >
-            {userRole === 'admin' && (
-              <span style={{
-                position: 'absolute',
-                top: -2,
-                right: -2,
-                width: 12,
-                height: 12,
-                background: '#dc2626',
-                borderRadius: '50%',
-                border: '2px solid white'
-              }} />
-            )}
-          </div>
-          {showDropdown && (
-            <div style={{
-              position: 'absolute',
-              top: 'calc(100% + 8px)',
-              right: 0,
-              background: '#fff',
-              borderRadius: 10,
-              boxShadow: '0 6px 28px rgba(16,24,40,0.12)',
-              minWidth: 180,
-              padding: '8px 0',
-              zIndex: 1000
-            }}>
-              <div style={{
-                padding: '10px 16px',
-                borderBottom: '1px solid #f1f5f9',
-                fontSize: 13,
-                color: '#64748b',
-                fontWeight: 600
-              }}>
-                {userRole === 'admin' ? 'Admin Account' : 'User Account'}
-              </div>
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%',
-                  padding: '10px 16px',
-                  textAlign: 'left',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  color: '#dc2626',
-                  fontWeight: 600,
-                  transition: 'background 0.2s'
-                }}
-                onMouseEnter={(e) => e.target.style.background = '#fef2f2'}
-                onMouseLeave={(e) => e.target.style.background = 'none'}
-              >
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
+        <button className="cb-nav-signin" onClick={handleSignIn}>Sign In</button>
+        <NavLink to="/dashboard" className="cb-nav-cta">Get Started</NavLink>
       </div>
     </nav>
   );

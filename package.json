@@ -2,7 +2,6 @@
   "name": "clearboard",
   "private": true,
   "version": "0.0.0",
-  
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -12,6 +11,7 @@
   "dependencies": {
     "archiver": "^7.0.1",
     "jszip": "^3.10.1",
+    "lucide-react": "^0.544.0",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "react": "^19.1.1",
