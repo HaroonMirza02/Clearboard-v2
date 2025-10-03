@@ -24,7 +24,7 @@ app.options('*', cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists (for temporary files only)
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -43,71 +43,87 @@ const HARDCODED_USERS = [
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
 
-// Metadata and users files
-const META_PATH = path.join(__dirname, 'uploads', 'filemeta.json');
-const USERS_PATH = path.join(__dirname, 'uploads', 'users.json');
+// Cloud-based metadata storage keys
+const META_GCS_KEY = 'metadata/filemeta.json';
+const USERS_GCS_KEY = 'metadata/users.json';
 
-function loadMeta() {
+// Load metadata from GCS
+async function loadMeta() {
   try {
-    if (!fs.existsSync(META_PATH)) {
-      console.log('Creating new filemeta.json');
-      saveMeta({});
-      return {};
+    const stream = getGCSDownloadStream(META_GCS_KEY);
+    const chunks = [];
+    
+    for await (const chunk of stream) {
+      chunks.push(chunk);
     }
-    const data = fs.readFileSync(META_PATH, 'utf8');
+    
+    const data = Buffer.concat(chunks).toString('utf8');
+    console.log('Metadata loaded from GCS');
     return JSON.parse(data);
   } catch (err) {
-    console.error('Error loading metadata:', err);
+    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
+      console.log('Creating new filemeta.json in GCS');
+      await saveMeta({});
+      return {};
+    }
+    console.error('Error loading metadata from GCS:', err);
     return {};
   }
 }
 
-function saveMeta(meta) {
+// Save metadata to GCS
+async function saveMeta(meta) {
   try {
-    const dir = path.dirname(META_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2), 'utf8');
-    console.log('Metadata saved successfully');
+    const jsonString = JSON.stringify(meta, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf8');
+    await uploadToGCS(META_GCS_KEY, buffer, 'application/json');
+    console.log('Metadata saved to GCS successfully');
   } catch (err) {
-    console.error('Error saving metadata:', err);
+    console.error('Error saving metadata to GCS:', err);
     throw err;
   }
 }
 
-function loadUsers() {
+// Load users from GCS
+async function loadUsers() {
   try {
-    if (!fs.existsSync(USERS_PATH)) {
-      console.log('Creating new users.json');
-      saveUsers([]);
-      return [];
+    const stream = getGCSDownloadStream(USERS_GCS_KEY);
+    const chunks = [];
+    
+    for await (const chunk of stream) {
+      chunks.push(chunk);
     }
-    const data = fs.readFileSync(USERS_PATH, 'utf8');
+    
+    const data = Buffer.concat(chunks).toString('utf8');
+    console.log('Users loaded from GCS');
     return JSON.parse(data);
   } catch (err) {
-    console.error('Error loading users:', err);
+    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
+      console.log('Creating new users.json in GCS');
+      await saveUsers([]);
+      return [];
+    }
+    console.error('Error loading users from GCS:', err);
     return [];
   }
 }
 
-function saveUsers(users) {
+// Save users to GCS
+async function saveUsers(users) {
   try {
-    const dir = path.dirname(USERS_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(USERS_PATH, JSON.stringify(users, null, 2), 'utf8');
-    console.log('Users saved successfully');
+    const jsonString = JSON.stringify(users, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf8');
+    await uploadToGCS(USERS_GCS_KEY, buffer, 'application/json');
+    console.log('Users saved to GCS successfully');
   } catch (err) {
-    console.error('Error saving users:', err);
+    console.error('Error saving users to GCS:', err);
     throw err;
   }
 }
 
 // Get all users (hardcoded + registered)
-function getAllUsers() {
-  const registeredUsers = loadUsers();
+async function getAllUsers() {
+  const registeredUsers = await loadUsers();
   return [...HARDCODED_USERS, ...registeredUsers];
 }
 
@@ -130,7 +146,7 @@ app.post('/api/signup', async (req, res) => {
     }
 
     // Check if user already exists
-    const allUsers = getAllUsers();
+    const allUsers = await getAllUsers();
     const existingUser = allUsers.find(u => u.userId.toLowerCase() === userId.toLowerCase());
     
     if (existingUser) {
@@ -154,9 +170,9 @@ app.post('/api/signup', async (req, res) => {
     };
 
     // Save to registered users
-    const registeredUsers = loadUsers();
+    const registeredUsers = await loadUsers();
     registeredUsers.push(newUser);
-    saveUsers(registeredUsers);
+    await saveUsers(registeredUsers);
 
     console.log(`New user registered: ${userId} (${id})`);
 
@@ -185,7 +201,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'User ID and password are required' });
     }
 
-    const allUsers = getAllUsers();
+    const allUsers = await getAllUsers();
     const user = allUsers.find(u => u.userId === userId);
 
     if (!user) {
@@ -251,7 +267,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     
     console.log(`Upload request: ${originalname}, compress: ${compress}, category: ${category}, user: ${req.user.userId}`);
     
-    const meta = loadMeta();
+    const meta = await loadMeta();
 
     // File owner is the current user
     const ownerId = req.user.id;
@@ -355,16 +371,18 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       ownerUserId
     };
     
-    saveMeta(meta);
+    await saveMeta(meta);
     console.log(`Metadata saved for file: ${id}`);
 
     // Clean up temporary files
     try {
       if (tempPath && fs.existsSync(tempPath)) {
         fs.unlinkSync(tempPath);
+        console.log(`Cleaned up temp file: ${tempPath}`);
       }
       if (processedPath && fs.existsSync(processedPath)) {
         fs.unlinkSync(processedPath);
+        console.log(`Cleaned up processed file: ${processedPath}`);
       }
     } catch (cleanupErr) {
       console.error('Error cleaning up temp files:', cleanupErr);
@@ -403,7 +421,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
 app.get('/api/files/download/:fileId', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const meta = loadMeta();
+    const meta = await loadMeta();
     const file = meta[fileId];
     
     if (!file) {
@@ -460,7 +478,7 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 // List files endpoint
 app.get('/api/files', auth, async (req, res) => {
   try {
-    const meta = loadMeta();
+    const meta = await loadMeta();
     const isAdmin = req.user.role === 'admin';
     
     console.log(`List request from user: ${req.user.userId} (${req.user.role})`);
@@ -509,7 +527,7 @@ app.get('/api/files', auth, async (req, res) => {
           modifiedAt: latest.modifiedAt,
           versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
           download: `/api/files/download/${latest.id}`,
-          storageProvider: latest.storageProvider || 'local',
+          storageProvider: latest.storageProvider || 'gcs',
           ownerUserId: latest.ownerUserId || 'unknown'
         };
       })
@@ -526,7 +544,7 @@ app.get('/api/files', auth, async (req, res) => {
 app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
   try {
     const { fileKey, version } = req.params;
-    const meta = loadMeta();
+    const meta = await loadMeta();
     const all = Object.values(meta);
     const current = all.find(f => f.id === fileKey);
     
@@ -561,7 +579,8 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Uploads directory: ${UPLOADS_DIR}`);
-  console.log(`Metadata file: ${META_PATH}`);
-  console.log(`Users file: ${USERS_PATH}`);
+  console.log(`Temp uploads directory: ${UPLOADS_DIR}`);
+  console.log(`Metadata stored in GCS: ${META_GCS_KEY}`);
+  console.log(`Users stored in GCS: ${USERS_GCS_KEY}`);
+  console.log('System is fully cloud-based');
 });
