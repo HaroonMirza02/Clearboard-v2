@@ -74,6 +74,11 @@ function FileList() {
   const [stats, setStats] = useState({ totalFiles: 0, storageUsedKB: 0, storageUsedMB: 0 });
   const [currentUserId, setCurrentUserId] = useState('');
   const [success, setSuccess] = useState('');
+  
+  // Filter states
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -165,6 +170,35 @@ function FileList() {
     fetchFiles();
     // eslint-disable-next-line
   }, [token]);
+
+  // Filter files based on selected criteria
+  const filteredFiles = files.filter(f => {
+    // Only show files if at least one filter is applied
+    const hasFilter = filterCategory || filterDateFrom || filterDateTo;
+    if (!hasFilter) return false;
+
+    // Category filter
+    if (filterCategory && f.category !== filterCategory) return false;
+
+    // Date filter
+    if (filterDateFrom || filterDateTo) {
+      const fileDate = new Date(f.uploadedAt);
+      if (filterDateFrom) {
+        const fromDate = new Date(filterDateFrom);
+        if (fileDate < fromDate) return false;
+      }
+      if (filterDateTo) {
+        const toDate = new Date(filterDateTo);
+        toDate.setHours(23, 59, 59, 999);
+        if (fileDate > toDate) return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Get unique categories from files
+  const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -323,7 +357,8 @@ function FileList() {
             </div>
           </div>
         </div>
-
+        
+        {/* Upload Section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
           <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
             Upload a File
@@ -376,6 +411,67 @@ function FileList() {
           </div>
         </div>
 
+        {/* Filter Section */}
+        <div style={{ ...sectionCard, marginBottom: 20 }}>
+          <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
+            Filter Files
+          </h2>
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              <div>
+                <label style={label}>Category</label>
+                <select 
+                  value={filterCategory} 
+                  onChange={e => setFilterCategory(e.target.value)} 
+                  style={select}
+                >
+                  <option value="" disabled hidden>Choose a Category</option>
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={label}>Date From</label>
+                <input 
+                  type="date" 
+                  value={filterDateFrom} 
+                  onChange={e => setFilterDateFrom(e.target.value)} 
+                  style={input} 
+                />
+              </div>
+              <div>
+                <label style={label}>Date To</label>
+                <input 
+                  type="date" 
+                  value={filterDateTo} 
+                  onChange={e => setFilterDateTo(e.target.value)} 
+                  style={input} 
+                />
+              </div>
+            </div>
+            {(filterCategory || filterDateFrom || filterDateTo) && (
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 14, color: '#64748b' }}>
+                  Showing {filteredFiles.length} of {files.length} files
+                </span>
+                <button
+                  onClick={() => {
+                    setFilterCategory('');
+                    setFilterDateFrom('');
+                    setFilterDateTo('');
+                  }}
+                  style={{ ...toggleBtn, marginTop: 0, fontSize: 13 }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+
+        {/* Files Table */}
         <div style={tableWrap}>
           <table style={tableStyle}>
             <thead>
@@ -393,15 +489,19 @@ function FileList() {
               </tr>
             </thead>
             <tbody>
-              {files.length === 0 && (
+              {filteredFiles.length === 0 && (
                 <tr>
                   <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 10 : 9}>
-                    <div style={{ fontSize: 48, marginBottom: 8 }}>📂</div>
-                    No files uploaded yet
+                    <div style={{ fontSize: 48, marginBottom: 8 }}>
+                      {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
+                    </div>
+                    {filterCategory || filterDateFrom || filterDateTo 
+                      ? 'No files match the selected filters' 
+                      : 'Select filters above to view files'}
                   </td>
                 </tr>
               )}
-              {files.map((f, idx) => (
+              {filteredFiles.map((f, idx) => (
                 <tr key={f.id} style={zebra(idx)}>
                   <td style={{ ...tdStyle, fontWeight: 500, fontSize: 11 }}>{f.name}</td>
                   <td style={tdStyle}>
@@ -435,10 +535,11 @@ function FileList() {
                     </td>
                   )}
                   <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
-                    {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                    <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
-                      {f.modifiedAt ? new Date(f.modifiedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                  
+                    {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </td>
+                  <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
+                    {f.modifiedAt ? new Date(f.modifiedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </td>
                   <td style={tdStyle}>
                     <button 
                       onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} 
@@ -456,6 +557,5 @@ function FileList() {
     </div>
   );
 }
-
 
 export default FileList;
