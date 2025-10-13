@@ -58,7 +58,7 @@ function Home() {
          <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\cloudss.gif" // replace with your GIF URL
+      src="public\cloudss.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -78,7 +78,7 @@ function Home() {
  <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\backup.gif" // replace with your GIF URL
+      src="public\backup.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 150,   // adjust as needed
@@ -99,7 +99,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\security.gif" // replace with your GIF URL
+      src="public/security.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -120,7 +120,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\fast.gif" // replace with your GIF URL
+      src="public\fast.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 60,   // adjust as needed
@@ -142,7 +142,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\analytics.gif" // replace with your GIF URL
+      src="public\analytics.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -162,7 +162,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="src\assets\native.gif" // replace with your GIF URL
+      src="public\native.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 120,   // adjust as needed
