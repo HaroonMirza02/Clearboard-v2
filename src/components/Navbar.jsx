@@ -10,7 +10,7 @@ function Navbar() {
   useEffect(() => {
     // Get user role from localStorage
     const role = localStorage.getItem('role');
-    setUserRole(role || 'user');
+    setUserRole(role || '');
 
     // Close dropdown when clicking outside
     const handleClickOutside = (event) => {
@@ -19,13 +19,22 @@ function Navbar() {
       }
     };
 
+    const handleAuthChanged = () => {
+      setUserRole(localStorage.getItem('role') || '');
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('auth-changed', handleAuthChanged);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('auth-changed', handleAuthChanged);
+    };
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
+    localStorage.removeItem('userId');
     setShowDropdown(false);
     navigate('/');
     window.location.reload(); // Force re-render to show login screen
@@ -51,8 +60,44 @@ function Navbar() {
         </ul>
       </div>
       <div className="cb-nav-right">
-        <button className="cb-nav-signin" onClick={handleSignIn}>Sign In</button>
-        <NavLink to="/dashboard" className="cb-nav-cta">Get Started</NavLink>
+        {localStorage.getItem('token') ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#eef2ff', color: '#1f2a37', fontWeight: 600, boxShadow: '0 4px 16px rgba(99,102,241,0.15)' }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+                {String(localStorage.getItem('userId') || 'U').slice(0,1).toUpperCase()}
+              </div>
+              <span style={{ fontSize: 14 }}>{localStorage.getItem('userId') || 'User'}</span>
+              {userRole === 'admin' && (
+                <span style={{ padding: '4px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700 }}>ADMIN</span>
+              )}
+            </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 999,
+                background: 'linear-gradient(135deg,#111827,#1f2937)',
+                color: '#fff',
+                border: '1px solid #0f172a',
+                boxShadow: '0 6px 18px rgba(15,23,42,0.25)',
+                fontWeight: 700,
+                letterSpacing: 0.2,
+                cursor: 'pointer',
+                transition: 'transform .06s ease, box-shadow .2s ease'
+              }}
+              onMouseDown={e => (e.currentTarget.style.transform = 'translateY(1px)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'translateY(0)')}
+              onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <>
+            <button className="cb-nav-signin" onClick={handleSignIn}>LogIn</button>
+            <NavLink to="/dashboard" className="cb-nav-cta">Sign Up</NavLink>
+          </>
+        )}
       </div>
     </nav>
   );

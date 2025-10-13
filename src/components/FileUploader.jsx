@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { zipFile } from '../utils/zipFile'
+import { API_ENDPOINTS } from '../utils/api'
 
 function FileUploader() {
   const inputRef = useRef(null)
@@ -27,7 +28,7 @@ function FileUploader() {
   formData.append('compress', 'zip')
       // Send to backend
       const token = localStorage.getItem('token');
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/upload', {
+      const res = await fetch(API_ENDPOINTS.UPLOAD, {
         method: 'POST',
         body: formData,
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}

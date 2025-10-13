@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_ENDPOINTS } from '../utils/api';
 
 function Login({ onLogin }) {
   const [userId, setUserId] = useState('');
@@ -9,7 +10,7 @@ function Login({ onLogin }) {
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/login', {
+      const res = await fetch(API_ENDPOINTS.LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, password })
@@ -18,6 +19,9 @@ function Login({ onLogin }) {
       const data = await res.json();
       localStorage.setItem('token', data.token);
       localStorage.setItem('role', data.role); // Store role as well
+      if (data.userId) {
+        localStorage.setItem('userId', data.userId);
+      }
       onLogin && onLogin();
     } catch (err) {
       setError('Invalid credentials');

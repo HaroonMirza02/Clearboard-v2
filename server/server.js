@@ -15,7 +15,15 @@ const app = express();
 
 // Enable CORS for frontend origins
 app.use(cors({
-  origin: ["https://fifth-flame-472409-q0.web.app"],
+  origin: [
+    "https://fifth-flame-472409-q0.web.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173"
+  ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));

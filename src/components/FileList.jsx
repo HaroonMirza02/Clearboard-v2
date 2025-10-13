@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../utils/api';
 
 const CATEGORY_OPTIONS = [
   'TechResearch',
@@ -55,6 +56,51 @@ const userBadge = {
   display: 'inline-block'
 };
 
+// Progress and notification styles
+const progressContainer = { 
+  width: '100%', 
+  height: 6, 
+  backgroundColor: '#e5e7eb', 
+  borderRadius: 3, 
+  overflow: 'hidden',
+  marginTop: 8
+};
+const progressBar = { 
+  height: '100%', 
+  backgroundColor: '#10b981', 
+  borderRadius: 3, 
+  transition: 'width 0.3s ease',
+  width: '0%'
+};
+const errorText = { 
+  color: '#dc2626', 
+  fontSize: 12, 
+  marginTop: 4, 
+  fontWeight: 500 
+};
+const successNotification = {
+  position: 'fixed',
+  bottom: 20,
+  left: 20,
+  background: '#10b981',
+  color: 'white',
+  padding: '12px 20px',
+  borderRadius: 8,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+  fontSize: 14,
+  fontWeight: 600,
+  zIndex: 1000,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  transform: 'translateX(-100%)',
+  transition: 'transform 0.3s ease'
+};
+const successNotificationVisible = {
+  ...successNotification,
+  transform: 'translateX(0)'
+};
+
 function FileList() {
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
@@ -64,7 +110,7 @@ function FileList() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [file, setFile] = useState(null);
+  const [filesToUpload, setFilesToUpload] = useState([]);
   const [compress, setCompress] = useState('none');
   const [category, setCategory] = useState('Others');
   const [customCategory, setCustomCategory] = useState('');
@@ -79,13 +125,19 @@ function FileList() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  
+  // Upload validation and progress states
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/login', { 
+      const res = await fetch(API_ENDPOINTS.LOGIN, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(login) 
@@ -94,6 +146,12 @@ function FileList() {
       const data = await res.json();
       setToken(data.token);
       setUserRole(data.role);
+      try {
+        if (data.token) localStorage.setItem('token', data.token);
+        if (data.role) localStorage.setItem('role', data.role);
+        if (data.userId) localStorage.setItem('userId', data.userId);
+        window.dispatchEvent(new Event('auth-changed'));
+      } catch {}
       setLogin({ userId: '', password: '' });
     } catch (err) { 
       setError('Login failed. Please check your credentials.'); 
@@ -117,7 +175,7 @@ function FileList() {
     
     setLoading(true);
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/signup', { 
+      const res = await fetch(API_ENDPOINTS.SIGNUP, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ userId: signup.userId, password: signup.password }) 
@@ -142,7 +200,7 @@ function FileList() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files', { 
+      const res = await fetch(API_ENDPOINTS.FILES, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       if (!res.ok) throw new Error('Failed to fetch files');
@@ -170,6 +228,18 @@ function FileList() {
     fetchFiles();
     // eslint-disable-next-line
   }, [token]);
+
+  // Initialize auth from localStorage on first load so refresh keeps session
+  useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem('token');
+      const savedRole = localStorage.getItem('role');
+      const savedUserId = localStorage.getItem('userId');
+      if (savedToken) setToken(savedToken);
+      if (savedRole) setUserRole(savedRole);
+      if (savedUserId) setCurrentUserId(savedUserId);
+    } catch {}
+  }, []);
 
   // Filter files based on selected criteria
   const filteredFiles = files.filter(f => {
@@ -200,38 +270,103 @@ function FileList() {
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
 
+  // Validation function
+  const validateUpload = () => {
+    const errors = {};
+    
+    if (!filesToUpload || filesToUpload.length === 0) {
+      errors.file = 'Please select at least one file to upload';
+    }
+    
+    if (!category || category === '') {
+      errors.category = 'Please select a category for the file';
+    }
+    
+    if (category === 'OtherText' && !customCategory.trim()) {
+      errors.customCategory = 'Please enter a custom category name';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Show success notification
+  const showSuccessMessage = () => {
+    setShowSuccessNotification(true);
+    setTimeout(() => {
+      setShowSuccessNotification(false);
+    }, 3000);
+  };
+
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file) return;
     setError('');
-    setLoading(true);
-    const form = new FormData();
-    form.append('file', file);
-    form.append('compress', compress);
-    form.append('category', category === 'OtherText' ? customCategory : category);
+    setValidationErrors({});
+    
+    // Validate form
+    if (!validateUpload()) {
+      return;
+    }
+    
+    setIsUploading(true);
+    setUploadProgress(0);
+    
     try {
-      const res = await fetch('https://backend-app-602854698306.asia-south1.run.app/api/files/upload', { 
-        method: 'POST', 
-        headers: { Authorization: `Bearer ${token}` }, 
-        body: form 
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await res.json();
-      setFile(null);
+      // We'll upload sequentially to keep server-side logic unchanged
+      const total = filesToUpload.length;
+      let completed = 0;
+
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          // keep a smooth animation between real file uploads
+          if (prev >= Math.min(90, Math.floor((completed / Math.max(total, 1)) * 100))) return prev;
+          return prev + Math.random() * 8;
+        });
+      }, 200);
+
+      for (const f of filesToUpload) {
+        const form = new FormData();
+        form.append('file', f);
+        form.append('compress', compress);
+        form.append('category', category === 'OtherText' ? customCategory : category);
+
+        const res = await fetch(API_ENDPOINTS.UPLOAD, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        await res.json();
+        completed += 1;
+        setUploadProgress(Math.floor((completed / total) * 100));
+      }
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      // Reset form
+      setFilesToUpload([]);
+      setCategory('Others');
+      setCustomCategory('');
+      setCompress('none');
+
+      // Show success message
+      showSuccessMessage();
+
       // Refresh files and stats
       await fetchFiles();
-    } catch (err) { 
-      setError('Upload failed'); 
+    } catch (err) {
+      setError('Upload failed. Please try again.');
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
-    setLoading(false);
   };
 
   const handleDownload = async (fileId, name, fileType, version) => {
     setError('');
     try {
-      const urlPath = version ? 
-        `https://backend-app-602854698306.asia-south1.run.app/api/files/download/${fileId}/version/${version}` : 
-        `https://backend-app-602854698306.asia-south1.run.app/api/files/download/${fileId}`;
+      const urlPath = API_ENDPOINTS.DOWNLOAD(fileId, version);
       const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
@@ -338,6 +473,17 @@ function FileList() {
   return (
     <div style={pageStyle}>
       <div style={container}>
+        {/* Welcome Banner */}
+        <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, background: 'linear-gradient(180deg,#eef2ff,#ffffff)' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 34, fontWeight: 900, color: '#1f2a37', letterSpacing: 0.2 }}>
+              Welcome back, <span style={{ color: '#4f46e5' }}>{localStorage.getItem('userId') || 'User'}</span>
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>
+              Your secure workspace is ready. Upload, version, and download files with confidence.
+            </div>
+          </div>
+        </div>
         {/* Real-time Dashboard Stats */}
         <div style={statsGrid}>
           <div style={statCard}>
@@ -370,24 +516,51 @@ function FileList() {
                 <label style={label}>File</label>
                 <input 
                   type="file" 
-                  onChange={e => setFile(e.target.files[0])} 
+                  multiple
+                  onChange={e => {
+                    const list = Array.from(e.target.files || []);
+                    setFilesToUpload(list);
+                    if (validationErrors.file) {
+                      setValidationErrors({ ...validationErrors, file: '' });
+                    }
+                  }} 
                   style={input} 
                 />
+                {validationErrors.file && <div style={errorText}>{validationErrors.file}</div>}
               </div>
               <div>
                 <label style={label}>Category</label>
-                <select value={category} onChange={e => setCategory(e.target.value)} style={select}>
+                <select 
+                  value={category} 
+                  onChange={e => {
+                    setCategory(e.target.value);
+                    if (validationErrors.category) {
+                      setValidationErrors({ ...validationErrors, category: '' });
+                    }
+                  }} 
+                  style={select}
+                >
+                  <option value="">Select Category</option>
                   {CATEGORY_OPTIONS.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
                   <option value="OtherText">Other (type below)</option>
                 </select>
+                {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
                 {category === 'OtherText' && (
-                  <input 
-                    type="text" 
-                    placeholder="Custom category" 
-                    value={customCategory} 
-                    onChange={e => setCustomCategory(e.target.value)} 
-                    style={{ ...input, marginTop: 8 }} 
-                  />
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Custom category" 
+                      value={customCategory} 
+                      onChange={e => {
+                        setCustomCategory(e.target.value);
+                        if (validationErrors.customCategory) {
+                          setValidationErrors({ ...validationErrors, customCategory: '' });
+                        }
+                      }} 
+                      style={{ ...input, marginTop: 8 }} 
+                    />
+                    {validationErrors.customCategory && <div style={errorText}>{validationErrors.customCategory}</div>}
+                  </div>
                 )}
               </div>
               <div>
@@ -401,13 +574,26 @@ function FileList() {
               <div>
                 <button 
                   onClick={handleUpload} 
-                  disabled={loading || !file} 
+                  disabled={isUploading || filesToUpload.length === 0} 
                   style={smallBtn}
                 >
-                  {loading ? 'Uploading...' : 'Upload'}
+                  {isUploading ? 'Uploading...' : (filesToUpload.length > 1 ? `Upload ${filesToUpload.length} files` : 'Upload')}
                 </button>
               </div>
             </div>
+            
+            {/* Progress Bar */}
+            {isUploading && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...</span>
+                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{Math.round(uploadProgress)}%</span>
+                </div>
+                <div style={progressContainer}>
+                  <div style={{ ...progressBar, width: `${uploadProgress}%` }}></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -554,6 +740,14 @@ function FileList() {
           </table>
         </div>
       </div>
+      
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <div style={successNotificationVisible}>
+          <span>✅</span>
+          <span>File uploaded successfully!</span>
+        </div>
+      )}
     </div>
   );
 }
