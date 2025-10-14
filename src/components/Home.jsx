@@ -38,8 +38,7 @@ function Home() {
         </div>
          
           <div className="cb-hero-actions">
-            <a href='/dashboard'><button  className="cb-btn cb-btn-primary">Get Started Free</button></a>
-            
+            <a href='/department'><button  className="cb-btn cb-btn-primary">Get Started Free</button></a>
             <button className="cb-btn cb-btn-secondary">Learn More</button>
           </div>
         </div>
@@ -58,7 +57,7 @@ function Home() {
          <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public\cloudss.gif" // replace with your GIF URL
+      src="\cloudss.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -78,7 +77,7 @@ function Home() {
  <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public\backup.gif" // replace with your GIF URL
+      src="\backup.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 150,   // adjust as needed
@@ -99,7 +98,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public/security.gif" // replace with your GIF URL
+      src="\security.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -120,7 +119,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public\fast.gif" // replace with your GIF URL
+      src="\fast.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 60,   // adjust as needed
@@ -142,7 +141,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public\analytics.gif" // replace with your GIF URL
+      src="\analytics.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 80,   // adjust as needed
@@ -162,7 +161,7 @@ function Home() {
           <div className="cb-feature-card">
   <div className="cb-feature-icon cb-icon-share mb-6">
     <img
-      src="public\native.gif" // replace with your GIF URL
+      src="\native.gif" // replace with your GIF URL
       alt="Feature Animation"
       style={{
         width: 120,   // adjust as needed

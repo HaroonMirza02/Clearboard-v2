@@ -20,6 +20,12 @@ export const API_BASE_URL = getApiBaseUrl();
 export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/api/login`,
   SIGNUP: `${API_BASE_URL}/api/signup`,
+  SEND_OTP: `${API_BASE_URL}/api/auth/send-otp`,
+  VERIFY_OTP: `${API_BASE_URL}/api/auth/verify-otp`,
+    // Add these two new lines 👇
+  FORGOT_PASSWORD: `${API_BASE_URL}/api/auth/forgot-password`,
+    CHANGE_PASSWORD: `${API_BASE_URL}/api/auth/change-password`, // Add this new line
+  RESET_PASSWORD: `${API_BASE_URL}/api/auth/reset-password`,
   FILES: `${API_BASE_URL}/api/files`,
   UPLOAD: `${API_BASE_URL}/api/files/upload`,
   DOWNLOAD: (fileId, version = null) => {

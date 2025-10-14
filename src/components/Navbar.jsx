@@ -41,7 +41,11 @@ function Navbar() {
   };
 
   const handleSignIn = () => {
-    navigate('/dashboard');
+    if (localStorage.getItem('token')) {
+      navigate('/dashboard');
+    } else {
+      navigate('/department');
+    }
   };
 
   return (
@@ -72,6 +76,26 @@ function Navbar() {
               )}
             </div>
             <button
+              onClick={() => navigate('/dashboard')}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 999,
+                background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
+                color: '#fff',
+                border: '1px solid #1e3a8a',
+                boxShadow: '0 6px 18px rgba(29,78,216,0.25)',
+                fontWeight: 700,
+                letterSpacing: 0.2,
+                cursor: 'pointer',
+                transition: 'transform .06s ease, box-shadow .2s ease'
+              }}
+              onMouseDown={e => (e.currentTarget.style.transform = 'translateY(1px)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'translateY(0)')}
+              onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              Dashboard
+            </button>
+            <button
               onClick={handleLogout}
               style={{
                 padding: '10px 16px',
@@ -95,7 +119,7 @@ function Navbar() {
         ) : (
           <>
             <button className="cb-nav-signin" onClick={handleSignIn}>LogIn</button>
-            <NavLink to="/dashboard" className="cb-nav-cta">Sign Up</NavLink>
+            <NavLink to="/department" className="cb-nav-cta">Sign Up</NavLink>
           </>
         )}
       </div>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef  } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
+import '../styles/Dashboard.css'; // Import the new CSS file
 
 const CATEGORY_OPTIONS = [
   'TechResearch',
@@ -54,6 +55,54 @@ const userBadge = {
   fontWeight: 600,
   fontSize: 12,
   display: 'inline-block'
+};
+
+// --- NEW STYLES START ---
+const userMenuContainer = { position: 'relative' };
+const userAvatar = {
+  width: 40,
+  height: 40,
+  borderRadius: '50%',
+  background: '#4f46e5',
+  color: '#fff',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: 18,
+  fontWeight: 'bold',
+  cursor: 'pointer',
+  textTransform: 'uppercase',
+  border: '2px solid #fff',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+};
+const dropdownMenu = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  right: 0,
+  background: '#fff',
+  borderRadius: 10,
+  boxShadow: '0 8px 32px rgba(16,24,40,0.12)',
+  width: 200,
+  zIndex: 100,
+  border: '1px solid #e2e8f0',
+  overflow: 'hidden',
+  animation: 'fadeIn 0.2s ease-out'
+};
+const menuItem = {
+  display: 'block',
+  width: '100%',
+  padding: '12px 16px',
+  background: 'none',
+  border: 'none',
+  textAlign: 'left',
+  fontSize: 14,
+  color: '#334155',
+  cursor: 'pointer',
+};
+const menuDivider = {
+  height: 1,
+  background: '#f1f5f9',
+  margin: '4px 0',
 };
 
 // Progress and notification styles
@@ -115,12 +164,40 @@ function FileList() {
   const [category, setCategory] = useState('Others');
   const [customCategory, setCustomCategory] = useState('');
   const [selectedVersions, setSelectedVersions] = useState({});
-
+  const [is2faEnabled, setIs2faEnabled] = useState(false); // State for 2FA toggle
   // Real-time Stats
   const [stats, setStats] = useState({ totalFiles: 0, storageUsedKB: 0, storageUsedMB: 0 });
   const [currentUserId, setCurrentUserId] = useState('');
   const [success, setSuccess] = useState('');
-  
+// In FileList.jsx
+
+const handleChangePassword = async () => {
+    setIsMenuOpen(false);
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            alert('You are not logged in.');
+            return;
+        }
+
+        // Change this line to call the new endpoint
+        const res = await fetch(API_ENDPOINTS.CHANGE_PASSWORD, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message);
+        
+        alert('A password reset link has been sent to your registered email address.');
+
+    } catch (err) {
+        alert(err.message || 'Failed to send reset link.');
+    }
+};
   // Filter states
   const [filterCategory, setFilterCategory] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
@@ -131,6 +208,9 @@ function FileList() {
   const [isUploading, setIsUploading] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
+  // --- NEW STATE & REF START ---
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -196,6 +276,7 @@ function FileList() {
     setLoading(false);
   };
 
+
   const fetchFiles = async () => {
     if (!token) return;
     setLoading(true);
@@ -223,6 +304,19 @@ function FileList() {
       setLoading(false);
     }
   };
+  // Fetch user data including 2FA status
+  const fetchUserData = async (authToken) => {
+    try {
+      const res = await fetch(API_ENDPOINTS.USER_STATUS, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!res.ok) throw new Error('Could not fetch user status');
+      const data = await res.json();
+      setIs2faEnabled(data.isTwoFactorEnabled || false);
+    } catch (err) {
+      console.error("Failed to fetch 2FA status:", err);
+    }
+  };
 
   useEffect(() => {
     fetchFiles();
@@ -232,13 +326,68 @@ function FileList() {
   // Initialize auth from localStorage on first load so refresh keeps session
   useEffect(() => {
     try {
-      const savedToken = localStorage.getItem('token');
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      setToken(savedToken);
+      fetchUserData(savedToken); // Fetch 2FA status on load
+    }
       const savedRole = localStorage.getItem('role');
       const savedUserId = localStorage.getItem('userId');
       if (savedToken) setToken(savedToken);
       if (savedRole) setUserRole(savedRole);
       if (savedUserId) setCurrentUserId(savedUserId);
     } catch {}
+  }, []);
+
+// Function to toggle 2FA
+  const handleToggle2FA = async () => {
+    const newState = !is2faEnabled;
+    setIs2faEnabled(newState); // Optimistic UI update
+
+    try {
+      const res = await fetch(API_ENDPOINTS.TOGGLE_2FA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ enable: newState }),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to update 2FA status');
+      }
+      // Success
+    } catch (err) {
+      console.error(err);
+      setIs2faEnabled(!newState); // Revert on error
+      alert('Could not update 2FA status. Please try again.');
+    }
+  };
+
+ const handleLogout = () => {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      localStorage.removeItem('userId');
+      window.dispatchEvent(new Event('auth-changed'));
+    } catch {}
+    setToken('');
+    setUserRole('');
+    setCurrentUserId('');
+    setIsMenuOpen(false); // Close menu on logout
+  };
+  
+  // --- NEW EFFECT FOR CLOSING MENU ON OUTSIDE CLICK START ---
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   // Filter files based on selected criteria
@@ -389,99 +538,53 @@ function FileList() {
         <div style={cardStyle}>
           <h1 style={brandTitle}>ClearBoard</h1>
           <div style={brandSub}>Secure File Portal</div>
-          
-          {!isSignup ? (
-            <div>
-              <label style={label}>User ID</label>
-              <input 
-                type="text" 
-                placeholder="User ID" 
-                value={login.userId} 
-                onChange={e => setLogin({ ...login, userId: e.target.value })} 
-                style={input} 
-              />
-              <label style={{ ...label, marginTop: 10 }}>Password</label>
-              <input 
-                type="password" 
-                placeholder="Password" 
-                value={login.password} 
-                onChange={e => setLogin({ ...login, password: e.target.value })} 
-                style={input} 
-              />
-              <button 
-                onClick={handleLogin} 
-                disabled={loading} 
-                style={{ ...primaryBtn, marginTop: 12 }}
-              >
-                {loading ? 'Signing in...' : 'Login'}
-              </button>
-              {error && <div style={{ color: 'crimson', marginTop: 10, textAlign: 'center', fontSize: 14 }}>{error}</div>}
-              <div style={{ textAlign: 'center', marginTop: 12 }}>
-                <span style={{ fontSize: 14, color: '#64748b' }}>Don't have an account? </span>
-                <button onClick={() => { setIsSignup(true); setError(''); }} style={toggleBtn}>
-                  Sign Up
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label style={label}>User ID</label>
-              <input 
-                type="text" 
-                placeholder="Choose a User ID" 
-                value={signup.userId} 
-                onChange={e => setSignup({ ...signup, userId: e.target.value })} 
-                style={input} 
-              />
-              <label style={{ ...label, marginTop: 10 }}>Password</label>
-              <input 
-                type="password" 
-                placeholder="Password (min 6 characters)" 
-                value={signup.password} 
-                onChange={e => setSignup({ ...signup, password: e.target.value })} 
-                style={input} 
-              />
-              <label style={{ ...label, marginTop: 10 }}>Confirm Password</label>
-              <input 
-                type="password" 
-                placeholder="Confirm Password" 
-                value={signup.confirmPassword} 
-                onChange={e => setSignup({ ...signup, confirmPassword: e.target.value })} 
-                style={input} 
-              />
-              <button 
-                onClick={handleSignup} 
-                disabled={loading} 
-                style={{ ...primaryBtn, marginTop: 12 }}
-              >
-                {loading ? 'Creating Account...' : 'Sign Up'}
-              </button>
-              {error && <div style={{ color: 'crimson', marginTop: 10, textAlign: 'center', fontSize: 14 }}>{error}</div>}
-              <div style={{ textAlign: 'center', marginTop: 12 }}>
-                <span style={{ fontSize: 14, color: '#64748b' }}>Already have an account? </span>
-                <button onClick={() => { setIsSignup(false); setError(''); }} style={toggleBtn}>
-                  Login
-                </button>
-              </div>
-            </div>
-          )}
+          <div style={{ marginTop: 8, color: '#64748b', fontSize: 14 }}>Please choose your department to continue</div>
+          <a href="/department" style={{ textDecoration: 'none' }}>
+            <button 
+              disabled={loading} 
+              style={{ ...primaryBtn, marginTop: 16 }}
+            >
+              Continue to Department Selection
+            </button>
+          </a>
+          {error && <div style={{ color: 'crimson', marginTop: 10, textAlign: 'center', fontSize: 14 }}>{error}</div>}
         </div>
       </div>
     );
   }
 
+    // Get the first letter of the user ID for the avatar
+  const userInitial = currentUserId ? currentUserId.charAt(0) : '?';
+
   return (
     <div style={pageStyle}>
       <div style={container}>
-        {/* Welcome Banner */}
-        <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, background: 'linear-gradient(180deg,#eef2ff,#ffffff)' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 34, fontWeight: 900, color: '#1f2a37', letterSpacing: 0.2 }}>
-              Welcome back, <span style={{ color: '#4f46e5' }}>{localStorage.getItem('userId') || 'User'}</span>
+        {/* --- MODIFIED HEADER / WELCOME BANNER START --- */}
+        <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, background: 'linear-gradient(180deg,#eef2ff,#ffffff)' }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: '#1f2a37' }}>
+              File Dashboard
             </div>
-            <div style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>
-              Your secure workspace is ready. Upload, version, and download files with confidence.
+            <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+              Your secure workspace is ready.
             </div>
+          </div>
+
+          {/* User Profile Dropdown Menu */}
+          <div style={userMenuContainer} ref={menuRef}>
+            <div style={userAvatar} onClick={() => setIsMenuOpen(!isMenuOpen)}>
+              {userInitial}
+            </div>
+            {isMenuOpen && (
+              <div style={dropdownMenu}>
+                <div style={{ borderLeft: '4px solid #3b82f6', padding: '14px 16px', borderBottom: '1px solid #f1f5f9' }}>
+                  <div style={{ fontWeight: 600, color: '#1f2a37' }}>{currentUserId}</div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>{userRole === 'admin' ? 'Administrator' : 'User'}</div>
+                </div>
+<button style={menuItem} onClick={handleChangePassword}>Change Password</button>
+                                
+              </div>
+            )}
           </div>
         </div>
         {/* Real-time Dashboard Stats */}

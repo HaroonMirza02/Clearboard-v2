@@ -9,26 +9,38 @@ const zlib = require('zlib');
 const archiver = require('archiver');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
 const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
 
 const app = express();
 
 // Enable CORS for frontend origins
-app.use(cors({
-  origin: [
-    "https://fifth-flame-472409-q0.web.app",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:4173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:4173"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+const ALLOWED_ORIGINS = [
+  "https://fifth-flame-472409-q0.web.app",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:4173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:4173"
+];
 
-app.options('*', cors());
+const corsOptions = {
+  origin: function(origin, callback) {
+    // Allow non-browser requests or same-origin with no Origin header
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -42,14 +54,37 @@ const upload = multer({ dest: UPLOADS_DIR });
 
 // Hardcoded users (legacy)
 const HARDCODED_USERS = [
-  { userId: 'HaroonMirza', password: 'password123', id: 'user-1', role: 'user' },
-  { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user' },
-  { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user' },
-  { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user' },
-  { userId: 'AliZakaria', password: 'admin123', id: 'admin-1', role: 'admin' }
+  { userId: 'HaroonMirza', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
+  { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user', department: 'Software Development' },
+  { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
+  { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user', department: 'Business Development' },
+  { userId: 'AliZakaria', password: 'admin123', id: 'admin-1', role: 'admin', department: 'Admin' }
 ];
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.EMAIL_USER || 'no-reply@example.com';
+const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST || '';
+const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || process.env.EMAIL_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
+
+// Simple in-memory OTP store: { email: { code, expiresAt } }
+const OTP_STORE = new Map();
+
+function createTransport() {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.warn('SMTP not configured. OTP emails will be logged to console.');
+    return null;
+  }
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS }
+  });
+}
+
+const mailer = createTransport();
 
 // Cloud-based metadata storage keys
 const META_GCS_KEY = 'metadata/filemeta.json';
@@ -138,7 +173,7 @@ async function getAllUsers() {
 // Signup endpoint
 app.post('/api/signup', async (req, res) => {
   try {
-    const { userId, password, email } = req.body;
+    const { userId, password, email, department, verificationToken } = req.body;
 
     // Validation
     if (!userId || !password) {
@@ -149,8 +184,26 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ message: 'User ID must be at least 3 characters' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    // Require verified email via OTP
+    if (!verificationToken) {
+      return res.status(403).json({ message: 'Email verification required' });
+    }
+    try {
+      const decoded = jwt.verify(verificationToken, JWT_SECRET);
+      if (!decoded?.emailVerified || decoded.emailVerified !== String(email).toLowerCase()) {
+        return res.status(403).json({ message: 'Email not verified' });
+      }
+    } catch (e) {
+      return res.status(403).json({ message: 'Invalid or expired verification token' });
+    }
+
+    // Admin signups are forbidden
+    if (String(department).toLowerCase() === 'admin') {
+      return res.status(403).json({ message: 'Admin signup is disabled' });
     }
 
     // Check if user already exists
@@ -174,6 +227,7 @@ app.post('/api/signup', async (req, res) => {
       email: email || null,
       id,
       role: 'user',
+      department: department || 'Software Development',
       createdAt: new Date().toISOString()
     };
 
@@ -185,13 +239,14 @@ app.post('/api/signup', async (req, res) => {
     console.log(`New user registered: ${userId} (${id})`);
 
     // Generate token
-    const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role }, JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role, department: newUser.department }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({ 
       message: 'User registered successfully',
       token, 
       role: newUser.role,
-      userId: newUser.userId
+      userId: newUser.userId,
+      department: newUser.department
     });
 
   } catch (err) {
@@ -200,10 +255,188 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// Add this near your other auth routes in server.js
+
+// In server.js
+
+// ✅ NEW: Endpoint for LOGGED-IN users to change their password
+app.post('/api/auth/change-password', auth, async (req, res) => {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({ message: 'Authentication required.' });
+        }
+
+        const allUsers = await getAllUsers();
+        const currentUser = allUsers.find(u => u.id === req.user.id);
+
+        if (!currentUser || !currentUser.email) {
+            return res.status(404).json({ message: 'User or user email not found.' });
+        }
+        
+        const userEmail = currentUser.email;
+        const resetToken = jwt.sign({ userId: currentUser.id, email: userEmail }, JWT_SECRET, { expiresIn: '15m' });
+        const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
+        
+        // ... (email sending logic remains the same)
+        const subject = 'Your Password Reset Link';
+        const text = `Hi ${currentUser.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+        
+        if (mailer) {
+            await mailer.sendMail({ from: EMAIL_FROM, to: userEmail, subject, text });
+        } else {
+            console.log(`[DEV PASSWORD RESET LINK] For ${userEmail}: ${resetLink}`);
+        }
+
+        res.json({ message: 'A password reset link has been sent to your registered email.' });
+
+    } catch (err) {
+        console.error('Change password error:', err);
+        res.status(500).json({ message: 'An error occurred.' });
+    }
+});
+
+
+// ✅ MODIFIED: Endpoint for LOGGED-OUT users to recover their password
+// Note: We've removed the 'auth' middleware and the logic for logged-in users
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ message: 'Email address is required.' });
+        }
+
+        const allUsers = await getAllUsers();
+        const user = allUsers.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+
+        if (!user) {
+            console.log(`Password reset requested for non-existent email: ${email}`);
+            return res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+        }
+        
+        const resetToken = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '15m' });
+        const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
+
+        // ... (email sending logic remains the same)
+        const subject = 'Your Password Reset Link';
+        const text = `Hi ${user.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+        
+        if (mailer) {
+            await mailer.sendMail({ from: EMAIL_FROM, to: email, subject, text });
+        } else {
+            console.log(`[DEV PASSWORD RESET LINK] For ${email}: ${resetLink}`);
+        }
+
+        res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ message: 'An error occurred.' });
+    }
+});
+
+
+// RESET THE PASSWORD USING THE TOKEN FROM THE LINK
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword) {
+            return res.status(400).json({ message: 'Token and new password are required.' });
+        }
+        
+        if (newPassword.length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET);
+        } catch (e) {
+            return res.status(400).json({ message: 'Invalid or expired reset token.' });
+        }
+
+        const { userId } = decoded;
+        
+        const registeredUsers = await loadUsers();
+        const userIndex = registeredUsers.findIndex(u => u.id === userId);
+
+        if (userIndex === -1) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        registeredUsers[userIndex].password = hashedPassword;
+
+        await saveUsers(registeredUsers);
+        
+        console.log(`Password reset successfully for user ID: ${userId}`);
+        res.json({ message: 'Password has been reset successfully.' });
+
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ message: 'Failed to reset password.' });
+    }
+});
+
+// Send OTP
+app.post('/api/auth/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+    OTP_STORE.set(email.toLowerCase(), { code, expiresAt });
+
+    const subject = 'Your ClearBoard verification code';
+    const text = `Your verification code is: ${code}. It expires in 5 minutes.`;
+
+    if (mailer) {
+      await mailer.sendMail({ from: EMAIL_FROM, to: email, subject, text });
+    } else {
+      console.log(`[DEV OTP] ${email} -> ${code}`);
+    }
+
+    const payload = { message: 'OTP sent' };
+    // Only surface devOtp when no mailer is configured
+    if (!mailer) {
+      payload.devOtp = code;
+    }
+    res.json(payload);
+  } catch (err) {
+    console.error('Send OTP error:', err);
+    res.status(500).json({ message: 'Failed to send OTP' });
+  }
+});
+
+// Verify OTP
+app.post('/api/auth/verify-otp', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ message: 'Email and code are required' });
+    const entry = OTP_STORE.get(email.toLowerCase());
+    if (!entry) return res.status(400).json({ message: 'No OTP requested for this email' });
+    if (Date.now() > entry.expiresAt) {
+      OTP_STORE.delete(email.toLowerCase());
+      return res.status(400).json({ message: 'OTP expired' });
+    }
+    if (entry.code !== String(code)) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+    // Mark verified and issue a short-lived token authorizing signup
+    OTP_STORE.delete(email.toLowerCase());
+    const verificationToken = jwt.sign({ emailVerified: email.toLowerCase() }, JWT_SECRET, { expiresIn: '10m' });
+    res.json({ message: 'OTP verified', verificationToken });
+  } catch (err) {
+    console.error('Verify OTP error:', err);
+    res.status(500).json({ message: 'OTP verification failed' });
+  }
+});
+
 // Login endpoint (returns JWT)
 app.post('/api/login', async (req, res) => {
   try {
-    const { userId, password } = req.body;
+    const { userId, password, department } = req.body;
 
     if (!userId || !password) {
       return res.status(400).json({ message: 'User ID and password are required' });
@@ -231,11 +464,30 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    // Department-based RBAC
+    const expectedDept = (user.department || '').toLowerCase();
+    const requestDept = (department || '').toLowerCase();
+
+    if (user.role === 'admin') {
+      // Admin must login only via Admin department
+      if (requestDept !== 'admin') {
+        return res.status(403).json({ message: 'Admin must login via Admin department' });
+      }
+    } else {
+      // Non-admin cannot login via Admin and must match their own department
+      if (requestDept === 'admin') {
+        return res.status(403).json({ message: 'Access denied for Admin department' });
+      }
+      if (expectedDept && requestDept && expectedDept !== requestDept) {
+        return res.status(403).json({ message: 'Department mismatch' });
+      }
+    }
+
+    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '1d' });
     
     console.log(`User logged in: ${userId} (${user.role})`);
     
-    res.json({ token, role: user.role, userId: user.userId });
+    res.json({ token, role: user.role, userId: user.userId, department: user.department });
 
   } catch (err) {
     console.error('Login error:', err);
