@@ -31,7 +31,7 @@ const toggleBtn = { background: 'none', border: 'none', color: '#2563eb', cursor
 
 const container = { maxWidth: 1180, margin: '0 auto' };
 const sectionCard = { background: '#fff', borderRadius: 14, boxShadow: '0 6px 28px rgba(16,24,40,0.06)', padding: 20 };
-const uploadGrid = { display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(180px, 260px) minmax(160px, 220px) auto', gap: 12, alignItems: 'end' };
+const uploadGrid = { display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(180px, 260px) minmax(160px, 220px) minmax(160px, 220px) auto', gap: 12, alignItems: 'end' };
 const select = { ...input };
 const smallBtn = { padding: '12px 18px', borderRadius: 10, background: '#2563eb', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer' };
 
@@ -166,6 +166,7 @@ function FileList() {
   const [compress, setCompress] = useState('none');
   const [category, setCategory] = useState('Others');
   const [customCategory, setCustomCategory] = useState('');
+  const [fileCreatedAt, setFileCreatedAt] = useState('');
   const [selectedVersions, setSelectedVersions] = useState({});
   const [is2faEnabled, setIs2faEnabled] = useState(false); // State for 2FA toggle
   // Real-time Stats
@@ -183,6 +184,7 @@ function FileList() {
         category: '',
         customCategory: '',
         newFile: null,
+        fileCreatedAt: '',
     });
   const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
 
@@ -215,11 +217,17 @@ function FileList() {
         setSelectedFile(file);
         // Check if the file's category is one of the standard options
         const isStandardCategory = CATEGORY_OPTIONS.includes(file.category);
+        
+        // Get the currently displayed version for fileCreatedAt
+        const selectedVersionNumber = selectedVersions[file.id] ?? file.versions[0].version;
+        const displayedVersion = file.versions.find(v => v.version === selectedVersionNumber) || file.versions[0];
+        
         setEditFormData({
             name: file.name,
             category: isStandardCategory ? file.category : 'Others',
             customCategory: isStandardCategory ? '' : file.category,
             newFile: null,
+            fileCreatedAt: displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toISOString().split('T')[0] : '',
         });
         setIsEditModalOpen(true);
     };
@@ -266,6 +274,7 @@ function FileList() {
 
         formData.append('name', editFormData.name);
         formData.append('category', finalCategory);
+        formData.append('fileCreatedAt', editFormData.fileCreatedAt);
         
         // Append the new file only if one was selected
         if (editFormData.newFile) {
@@ -542,6 +551,12 @@ const handleChangePassword = async () => {
       if (savedUserId) setCurrentUserId(savedUserId);
     } catch {}
   }, []);
+  
+  // Set default file created date to today
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    setFileCreatedAt(today);
+  }, []);
 
 // Function to toggle 2FA
   const handleToggle2FA = async () => {
@@ -680,6 +695,7 @@ const handleUpload = async (e) => {
                 throw new Error("Category is missing. Please select or type a category.");
             }
             formData.append('category', finalCategory);
+            formData.append('fileCreatedAt', fileCreatedAt);
 
             // Fetch request with the cancellation signal
             const res = await fetch(API_ENDPOINTS.UPLOAD, {
@@ -700,6 +716,8 @@ const handleUpload = async (e) => {
         setCategory('Others');
         setCustomCategory('');
         setCompress('none');
+        const today = new Date().toISOString().split('T')[0];
+        setFileCreatedAt(today);
         if(document.querySelector('input[type="file"]')) {
             document.querySelector('input[type="file"]').value = '';
         }
@@ -961,6 +979,15 @@ const cancelBtnStyle = {
                 </select>
               </div>
               <div>
+                <label style={label}>File Creation Date</label>
+                <input 
+                  type="date" 
+                  value={fileCreatedAt} 
+                  onChange={e => setFileCreatedAt(e.target.value)} 
+                  style={input} 
+                />
+              </div>
+              <div>
 <button 
     onClick={handleUpload} 
     
@@ -1067,6 +1094,7 @@ const cancelBtnStyle = {
                 {userRole === 'admin' && <th style={thStyle}>Owner</th>}
                 <th style={thStyle}>Uploaded</th>
                 <th style={thStyle}>Modified</th>
+                <th style={thStyle}>File Creation</th>
                 <th style={thStyle}>Action</th>
               </tr>
             </thead>
@@ -1074,7 +1102,7 @@ const cancelBtnStyle = {
     {/* First, check if filteredFiles is empty to show the message */}
     {filteredFiles.length === 0 && (
         <tr>
-            <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 10 : 9}>
+            <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 11 : 10}>
                 <div style={{ fontSize: 48, marginBottom: 8 }}>
                     {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
                 </div>
@@ -1136,6 +1164,7 @@ const cancelBtnStyle = {
                 {userRole === 'admin' && <td style={tdStyle}>{fileGroup.ownerUserId}</td>}
                 <td style={tdStyle}>{displayedVersion.uploadedAt ? new Date(displayedVersion.uploadedAt).toLocaleDateString('en-GB') : '-'}</td>
                 <td style={tdStyle}>{displayedVersion.modifiedAt ? new Date(displayedVersion.modifiedAt).toLocaleDateString('en-GB') : '-'}</td>
+                <td style={tdStyle}>{displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toLocaleDateString('en-GB') : '-'}</td>
                 <td style={tdStyle}>
                     <div className="actions-container" ref={openActionMenuId === fileGroup.id ? actionMenuRef : null}>
                         <button className="actions-trigger" onClick={() => setOpenActionMenuId(openActionMenuId === fileGroup.id ? null : fileGroup.id)}>...</button>
@@ -1190,6 +1219,17 @@ const cancelBtnStyle = {
                                     <input name="customCategory" value={editFormData.customCategory} onChange={handleEditFormChange} style={input} required />
                                 </div>
                             )}
+
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={label}>File Creation Date</label>
+                                <input 
+                                    type="date" 
+                                    name="fileCreatedAt" 
+                                    value={editFormData.fileCreatedAt} 
+                                    onChange={handleEditFormChange} 
+                                    style={input} 
+                                />
+                            </div>
 
                             <div style={{ marginBottom: '16px' }}>
                                 <label style={label}>Replace File (Optional)</label>

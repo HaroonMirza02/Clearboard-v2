@@ -523,7 +523,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     
     const { originalname, mimetype, path: filePath } = req.file;
     tempPath = filePath;
-    const { compress = 'none', category = 'Others' } = req.body;
+    const { compress = 'none', category = 'Others', fileCreatedAt } = req.body;
     
     console.log(`Upload request: ${originalname}, compress: ${compress}, category: ${category}, user: ${req.user.userId}`);
     // ✅ NEW: Get the base name without the extension
@@ -549,6 +549,11 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
           return ts < earliest ? ts : earliest;
         }, sameGroup[0].uploadedAt || nowIso)
       : nowIso;
+    
+    // Handle fileCreatedAt - use provided date or current date for first version
+    const fileCreatedAtDate = sameGroup.length > 0 
+      ? sameGroup[0].fileCreatedAt // Keep existing fileCreatedAt for subsequent versions
+      : (fileCreatedAt ? new Date(fileCreatedAt).toISOString() : nowIso);
 
     const version = maxVersion + 1;
     const uploadedAt = firstUploadedAt;
@@ -628,6 +633,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
       version,
       uploadedAt,
       modifiedAt,
+      fileCreatedAt: fileCreatedAtDate,
       size,
       ownerId,
       ownerUserId
@@ -782,7 +788,7 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
         console.log('Backend received req.body:', req.body);
 
     const { fileId } = req.params;
-    const { name, category } = req.body;
+    const { name, category, fileCreatedAt } = req.body;
     const meta = await loadMeta();
     const originalFile = meta[fileId];
 
@@ -840,6 +846,11 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
       originalFile.baseName = name; // Update the base name
       originalFile.category = category;
       originalFile.modifiedAt = new Date().toISOString();
+      
+      // Update fileCreatedAt if provided
+      if (fileCreatedAt) {
+        originalFile.fileCreatedAt = new Date(fileCreatedAt).toISOString();
+      }
     }
 
     await saveMeta(meta);
@@ -910,7 +921,8 @@ console.log("-------------------------------------------");
             size: (v.size / 1024).toFixed(1),
             compressionType: v.compressionType,
             uploadedAt: v.uploadedAt,
-            modifiedAt: v.modifiedAt
+            modifiedAt: v.modifiedAt,
+            fileCreatedAt: v.fileCreatedAt
           };
         })
       };

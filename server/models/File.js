@@ -9,6 +9,7 @@ const fileSchema = new mongoose.Schema({
   sharedWithTeams: [{ type: String, enum: ['softdev', 'busdev', 'admin'] }],
   sharedAt: { type: Date },
   sharedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  fileCreatedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
