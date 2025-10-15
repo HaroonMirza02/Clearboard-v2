@@ -447,11 +447,16 @@ const handleChangePassword = async () => {
       setFiles(data);
       
       // Calculate real-time stats
-      const totalFiles = data.length;
-      const storageUsedKB = data.reduce((sum, f) => sum + parseFloat(f.size || 0), 0);
-      const storageUsedMB = storageUsedKB / 1024;
-      
-      setStats({ totalFiles, storageUsedKB, storageUsedMB });
+ // ✅ REPLACED: New, simpler stat calculation
+        const totalFiles = data.length;
+        const totalStorageKB = data.reduce((sum, fileGroup) => {
+            return sum + parseFloat(fileGroup.totalSizeKB || 0);
+        }, 0);
+        
+        setStats({
+            totalFiles: totalFiles,
+            storageUsedMB: totalStorageKB / 1024
+        });
       
       const init = {};
       data.forEach(f => { init[f.id] = f.version; });
@@ -470,6 +475,7 @@ const handleChangePassword = async () => {
       });
       if (!res.ok) throw new Error('Could not fetch user status');
       const data = await res.json();
+      
       setIs2faEnabled(data.isTwoFactorEnabled || false);
     } catch (err) {
       console.error("Failed to fetch 2FA status:", err);

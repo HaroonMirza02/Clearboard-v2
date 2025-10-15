@@ -877,6 +877,7 @@ console.log("-------------------------------------------");
     const files = Object.values(groups).map(arr => {
       arr.sort((a, b) => (b.version || 1) - (a.version || 1));
       const latest = arr[0];
+    const totalGroupSize = arr.reduce((sum, v) => sum + (v.size || 0), 0);
 
       // Return the new, correct data structure
       return {
@@ -884,7 +885,7 @@ console.log("-------------------------------------------");
         name: latest.baseName || path.parse(latest.originalname).name,
         category: latest.category || 'Others',
         ownerUserId: latest.ownerUserId || 'unknown',
-        
+    totalSizeKB: (arr.reduce((sum, v) => sum + (v.size || 0), 0) / 1024).toFixed(1),
         // This creates the detailed array the frontend needs
         versions: arr.map(v => {
           const ext = path.parse(v.originalname).ext.replace('.', '');
