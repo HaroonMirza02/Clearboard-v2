@@ -477,6 +477,13 @@ const handleChangePassword = async () => {
       });
       if (!res.ok) throw new Error('Failed to fetch files');
       const data = await res.json();
+      
+      // Debug: Log the data to see what we're getting
+      console.log('Files data received:', data);
+      data.forEach(fileGroup => {
+        console.log(`File: ${fileGroup.name}, isOwner: ${fileGroup.isOwner}, isShared: ${fileGroup.isShared}`);
+      });
+      
       setFiles(data);
       
       // Calculate real-time stats
@@ -744,6 +751,68 @@ const cancelBtnStyle = {
       window.URL.revokeObjectURL(url);
     } catch (err) { 
       setError('Download failed'); 
+    }
+  };
+
+  const handleShareFile = async (fileId) => {
+    try {
+      const res = await fetch(API_ENDPOINTS.SHARE_FILE(fileId), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to share file');
+      }
+      
+      const data = await res.json();
+      setSuccess(`File shared successfully with your team members!`);
+      setTimeout(() => setSuccess(''), 3000);
+      
+      // Refresh the file list to show updated sharing status
+      await fetchFiles();
+      
+      // Close the action menu
+      setOpenActionMenuId(null);
+      
+    } catch (err) {
+      setError(err.message || 'Failed to share file');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleUnshareFile = async (fileId) => {
+    try {
+      const res = await fetch(API_ENDPOINTS.UNSHARE_FILE(fileId), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to unshare file');
+      }
+      
+      const data = await res.json();
+      setSuccess('File sharing removed successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+      
+      // Refresh the file list to show updated sharing status
+      await fetchFiles();
+      
+      // Close the action menu
+      setOpenActionMenuId(null);
+      
+    } catch (err) {
+      setError(err.message || 'Failed to unshare file');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -1028,7 +1097,29 @@ const cancelBtnStyle = {
 
         return (
             <tr key={fileGroup.id} style={zebra(idx)}>
-                <td style={tdStyle}>{fileGroup.name}</td>
+                <td style={tdStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{fileGroup.name}</span>
+                        {fileGroup.isShared && (
+                            <span style={{ 
+                                ...pill, 
+                                background: '#dbeafe', 
+                                color: '#1e40af', 
+                                fontSize: '10px',
+                                padding: '2px 6px'
+                            }}>SHARED</span>
+                        )}
+                        {!fileGroup.isOwner && (
+                            <span style={{ 
+                                ...pill, 
+                                background: '#fef3c7', 
+                                color: '#92400e', 
+                                fontSize: '10px',
+                                padding: '2px 6px'
+                            }}>TEAM FILE</span>
+                        )}
+                    </div>
+                </td>
                 <td style={tdStyle}><span style={{ ...pill, background: '#eef2ff', color: '#4338ca' }}>{displayedVersion.fileType || 'N/A'}</span></td>
                 <td style={tdStyle}>{displayedVersion.size}</td>
                 <td style={tdStyle}><span style={{ ...pill, background: displayedVersion.compressionType === 'none' ? '#f1f5f9' : '#dcfce7', color: displayedVersion.compressionType === 'none' ? '#64748b' : '#166534' }}>{displayedVersion.compressionType}</span></td>
@@ -1051,6 +1142,12 @@ const cancelBtnStyle = {
                         {openActionMenuId === fileGroup.id && (
                             <div className="actions-dropdown">
                                 <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>Download</button>
+                                {fileGroup.isOwner && (
+                                    fileGroup.isShared ? 
+                                        <button className="actions-item" onClick={() => handleUnshareFile(displayedVersion.id)}>Unshare</button>
+                                        : 
+                                        <button className="actions-item" onClick={() => handleShareFile(displayedVersion.id)}>Share with Team</button>
+                                )}
                                 <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>
                                 <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>
                             </div>
@@ -1134,6 +1231,26 @@ const cancelBtnStyle = {
         <div style={successNotificationVisible}>
           <span>✅</span>
           <span>File uploaded successfully!</span>
+        </div>
+      )}
+      
+      {/* Success Message for Sharing */}
+      {success && (
+        <div style={successNotificationVisible}>
+          <span>✅</span>
+          <span>{success}</span>
+        </div>
+      )}
+      
+      {/* Error Message */}
+      {error && (
+        <div style={{ 
+          ...successNotification, 
+          background: '#dc2626',
+          transform: 'translateX(0)'
+        }}>
+          <span>⚠</span>
+          <span>{error}</span>
         </div>
       )}
     </div>

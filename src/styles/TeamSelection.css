@@ -1,0 +1,7 @@
+.team-selection-page { max-width: 980px; margin: 48px auto; padding: 24px; text-align: center; }
+.team-selection-page h2 { font-size: 28px; margin-bottom: 20px; }
+.team-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+.team-card { padding: 20px; border-radius: 10px; background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,0.06); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
+.team-card:hover { transform: translateY(-6px); box-shadow: 0 12px 30px rgba(15,23,42,0.09); }
+.team-card h3 { margin: 0 0 8px; }
+.team-card p { margin: 0; color: #475569; }

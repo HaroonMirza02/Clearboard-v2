@@ -50,11 +50,58 @@ const crypto = require('crypto');
 const upload = multer();
 
 
-// List all files with latest version
-router.get('/', async (req, res, next) => {
+// List all files with latest version (including shared files for authenticated users)
+router.get('/', auth, async (req, res, next) => {
   try {
-    // Get all files
-    const files = await File.find();
+    const userId = req.user._id;
+    
+    // Get user's team information
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(400).json({ message: 'User not found' });
+    }
+    
+    // Build query to get user's own files and files shared with their team
+    const query = {
+      $or: [
+        { ownerId: userId }, // User's own files
+        { 
+          isShared: true,
+          sharedWithTeams: { $in: [user.team] } // Files shared with user's team
+        }
+      ]
+    };
+    
+    // If user is admin, show all files
+    if (user.role === 'admin') {
+      const files = await File.find();
+      const fileList = await Promise.all(files.map(async (file) => {
+        const latestVersion = await FileVersion.findOne({ fileId: file._id, status: 'stored' }).sort({ versionNumber: -1 });
+        return {
+          id: file._id,
+          name: file.name,
+          category: file.category,
+          createdAt: file.createdAt,
+          updatedAt: file.updatedAt,
+          isShared: file.isShared,
+          sharedWithTeams: file.sharedWithTeams,
+          sharedAt: file.sharedAt,
+          isOwner: file.ownerId && file.ownerId.equals(userId),
+          latestVersion: latestVersion ? {
+            versionNumber: latestVersion.versionNumber,
+            size: latestVersion.size,
+            contentType: latestVersion.contentType,
+            uploadedAt: latestVersion.createdAt
+          } : null
+        };
+      }));
+      return res.json(fileList);
+    }
+    
+    // Get files based on query
+    const files = await File.find(query);
+    
     // For each file, get the latest version
     const fileList = await Promise.all(files.map(async (file) => {
       const latestVersion = await FileVersion.findOne({ fileId: file._id, status: 'stored' }).sort({ versionNumber: -1 });
@@ -64,6 +111,10 @@ router.get('/', async (req, res, next) => {
         category: file.category,
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
+        isShared: file.isShared,
+        sharedWithTeams: file.sharedWithTeams,
+        sharedAt: file.sharedAt,
+        isOwner: file.ownerId && file.ownerId.equals(userId),
         latestVersion: latestVersion ? {
           versionNumber: latestVersion.versionNumber,
           size: latestVersion.size,
@@ -259,6 +310,91 @@ router.get('/download/:fileId', auth, async (req, res, next) => {
     const { getSignedUrl } = require('../services/gcs');
     const url = await getSignedUrl(fileVersion.objectKey);
     res.json({ url });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Share file with team
+router.post('/share/:fileId', auth, async (req, res, next) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user._id;
+    
+    // Get user's team information
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    if (!user || !user.team) {
+      return res.status(400).json({ message: 'User team information not found' });
+    }
+    
+    // Find the file
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    // Check if user owns the file or has admin role
+    if (!file.ownerId.equals(userId) && user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only share files you own' });
+    }
+    
+    // Update file sharing status
+    file.isShared = true;
+    file.sharedWithTeams = [user.team];
+    file.sharedAt = new Date();
+    file.sharedBy = userId;
+    file.updatedAt = new Date();
+    
+    await file.save();
+    
+    res.json({ 
+      message: `File shared successfully with ${user.team} team members`,
+      fileId: file._id,
+      sharedWithTeams: file.sharedWithTeams
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Unshare file (remove sharing)
+router.post('/unshare/:fileId', auth, async (req, res, next) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user._id;
+    
+    // Get user's team information
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(400).json({ message: 'User not found' });
+    }
+    
+    // Find the file
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    // Check if user owns the file or has admin role
+    if (!file.ownerId.equals(userId) && user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only unshare files you own' });
+    }
+    
+    // Update file sharing status
+    file.isShared = false;
+    file.sharedWithTeams = [];
+    file.sharedAt = null;
+    file.sharedBy = null;
+    file.updatedAt = new Date();
+    
+    await file.save();
+    
+    res.json({ 
+      message: 'File sharing removed successfully',
+      fileId: file._id
+    });
   } catch (err) {
     next(err);
   }

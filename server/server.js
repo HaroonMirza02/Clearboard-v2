@@ -690,8 +690,12 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found' });
     }
 
-    // Authorization check
-    if (req.user.role !== 'admin' && file.ownerId !== req.user.id) {
+    // Authorization check - allow access to own files and shared files
+    const hasAccess = req.user.role === 'admin' || 
+                     file.ownerId === req.user.id || 
+                     (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
+    
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -855,7 +859,13 @@ app.get('/api/files', auth, async (req, res) => {
     
     console.log(`List request from user: ${req.user.userId} (${req.user.role})`);
     
-    const userFiles = Object.values(meta).filter(f => isAdmin || f.ownerId === req.user.id);
+    // Get user's own files and files shared with their department
+    const userFiles = Object.values(meta).filter(f => {
+      if (isAdmin) return true;
+      if (f.ownerId === req.user.id) return true;
+      if (f.isShared && f.sharedWithTeams && f.sharedWithTeams.includes(req.user.department)) return true;
+      return false;
+    });
 // ✅ ADD THIS LOGGING BLOCK TO INSPECT THE DATA
 console.log("--- INSPECTING ALL USER FILES BEFORE GROUPING ---");
 userFiles.forEach(f => {
@@ -885,7 +895,11 @@ console.log("-------------------------------------------");
         name: latest.baseName || path.parse(latest.originalname).name,
         category: latest.category || 'Others',
         ownerUserId: latest.ownerUserId || 'unknown',
-    totalSizeKB: (arr.reduce((sum, v) => sum + (v.size || 0), 0) / 1024).toFixed(1),
+        totalSizeKB: (arr.reduce((sum, v) => sum + (v.size || 0), 0) / 1024).toFixed(1),
+        isShared: latest.isShared || false,
+        sharedWithTeams: latest.sharedWithTeams || [],
+        sharedAt: latest.sharedAt,
+        isOwner: latest.ownerId === req.user.id,
         // This creates the detailed array the frontend needs
         versions: arr.map(v => {
           const ext = path.parse(v.originalname).ext.replace('.', '');
@@ -923,8 +937,12 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
       return res.status(404).json({ message: 'File not found' });
     }
     
-    // Authorization check
-    if (req.user.role !== 'admin' && currentFile.ownerId !== req.user.id) {
+    // Authorization check - allow access to own files and shared files
+    const hasAccess = req.user.role === 'admin' || 
+                     currentFile.ownerId === req.user.id || 
+                     (currentFile.isShared && currentFile.sharedWithTeams && currentFile.sharedWithTeams.includes(req.user.department));
+    
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -947,6 +965,88 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
   } catch (err) {
     console.error('Version download error:', err);
     res.status(500).json({ message: 'Download failed', error: err.message });
+  }
+});
+
+// Share file with team
+app.post('/api/files/share/:fileId', auth, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user.id;
+    const userDepartment = req.user.department;
+    
+    if (!userDepartment) {
+      return res.status(400).json({ message: 'User department information not found' });
+    }
+    
+    const meta = await loadMeta();
+    const file = meta[fileId];
+    
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    // Check if user owns the file or has admin role
+    if (file.ownerId !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only share files you own' });
+    }
+    
+    // Update file sharing status
+    file.isShared = true;
+    file.sharedWithTeams = [userDepartment];
+    file.sharedAt = new Date().toISOString();
+    file.sharedBy = userId;
+    
+    await saveMeta(meta);
+    
+    console.log(`File ${fileId} shared with ${userDepartment} team by ${req.user.userId}`);
+    
+    res.json({ 
+      message: `File shared successfully with ${userDepartment} team members`,
+      fileId: file.id,
+      sharedWithTeams: file.sharedWithTeams
+    });
+  } catch (err) {
+    console.error('Share file error:', err);
+    res.status(500).json({ message: 'Failed to share file', error: err.message });
+  }
+});
+
+// Unshare file (remove sharing)
+app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user.id;
+    
+    const meta = await loadMeta();
+    const file = meta[fileId];
+    
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    // Check if user owns the file or has admin role
+    if (file.ownerId !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only unshare files you own' });
+    }
+    
+    // Update file sharing status
+    file.isShared = false;
+    file.sharedWithTeams = [];
+    file.sharedAt = null;
+    file.sharedBy = null;
+    
+    await saveMeta(meta);
+    
+    console.log(`File ${fileId} unshared by ${req.user.userId}`);
+    
+    res.json({ 
+      message: 'File sharing removed successfully',
+      fileId: file.id
+    });
+  } catch (err) {
+    console.error('Unshare file error:', err);
+    res.status(500).json({ message: 'Failed to unshare file', error: err.message });
   }
 });
 
