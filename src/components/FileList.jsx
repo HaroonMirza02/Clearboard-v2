@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef  } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
 import '../styles/Dashboard.css'; // Import the new CSS file
+import '../styles/Modal.css'; // The new modal styles
 
 const CATEGORY_OPTIONS = [
   'TechResearch',
@@ -170,6 +171,117 @@ function FileList() {
   const [currentUserId, setCurrentUserId] = useState('');
   const [success, setSuccess] = useState('');
 // In FileList.jsx
+// ✅ --- NEW STATES FOR MODALS & ACTIONS ---
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null); // File to be edited/deleted
+    // ✅ UPDATED state for the edit form
+    const [editFormData, setEditFormData] = useState({
+        name: '',
+        category: '',
+        customCategory: '',
+        newFile: null,
+    });
+     // ✅ --- NEW HANDLER FUNCTIONS FOR EDIT/DELETE ---
+
+    // ✅ UPDATED handler to open the edit modal and populate state
+    const handleOpenEditModal = (file) => {
+        setSelectedFile(file);
+        // Check if the file's category is one of the standard options
+        const isStandardCategory = CATEGORY_OPTIONS.includes(file.category);
+        setEditFormData({
+            name: file.name,
+            category: isStandardCategory ? file.category : 'Others',
+            customCategory: isStandardCategory ? '' : file.category,
+            newFile: null,
+        });
+        setIsEditModalOpen(true);
+    };
+
+    const handleOpenDeleteModal = (file) => {
+        setSelectedFile(file);
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleCloseModals = () => {
+        setIsEditModalOpen(false);
+        setIsDeleteModalOpen(false);
+        setSelectedFile(null);
+    };
+
+    // ✅ UPDATED handler to manage form changes (including the file input)
+    const handleEditFormChange = (e) => {
+        const { name, value, files } = e.target;
+        if (name === 'newFile') {
+            setEditFormData({ ...editFormData, newFile: files[0] });
+        } else {
+            setEditFormData({ ...editFormData, [name]: value });
+        }
+    };
+
+    // ✅ REWRITTEN handler to submit the form as multipart/form-data
+    const handleUpdateFile = async (e) => {
+        e.preventDefault();
+        if (!selectedFile) return;
+
+        const formData = new FormData();
+        
+        // Determine the final category name
+        const finalCategory = editFormData.category === 'Others' 
+            ? editFormData.customCategory 
+            : editFormData.category;
+
+        formData.append('name', editFormData.name);
+        formData.append('category', finalCategory);
+        
+        // Append the new file only if one was selected
+        if (editFormData.newFile) {
+            formData.append('newFile', editFormData.newFile);
+        }
+
+        try {
+            // Note: We do NOT set the 'Content-Type' header. 
+            // The browser will automatically set it to 'multipart/form-data' with the correct boundary.
+            const res = await fetch(API_ENDPOINTS.EDIT_FILE(selectedFile.id), {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                body: formData, // Send the FormData object
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || 'Failed to update file');
+            }
+            
+            await fetchFiles(token); // Refresh the file list
+            handleCloseModals();
+
+        } catch (err) {
+            alert(err.message);
+        }
+    };
+    
+    const handleDeleteFile = async () => {
+        if (!selectedFile) return;
+
+        try {
+            const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error('Failed to delete file');
+            
+            // Refresh file list
+            setFiles(files.filter(f => f.id !== selectedFile.id));
+
+            handleCloseModals();
+        } catch (err) {
+            alert(err.message || 'An error occurred.');
+        }
+    };
+
 
 const handleChangePassword = async () => {
     setIsMenuOpen(false);
@@ -275,6 +387,24 @@ const handleChangePassword = async () => {
     }
     setLoading(false);
   };
+
+
+    // ✅ NEW STATE for the action dropdown menu
+    const [openActionMenuId, setOpenActionMenuId] = useState(null);
+    const actionMenuRef = useRef(null);
+
+    // ✅ NEW EFFECT to close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+                setOpenActionMenuId(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
 
   const fetchFiles = async () => {
@@ -571,21 +701,8 @@ const handleChangePassword = async () => {
           </div>
 
           {/* User Profile Dropdown Menu */}
-          <div style={userMenuContainer} ref={menuRef}>
-            <div style={userAvatar} onClick={() => setIsMenuOpen(!isMenuOpen)}>
-              {userInitial}
-            </div>
-            {isMenuOpen && (
-              <div style={dropdownMenu}>
-                <div style={{ borderLeft: '4px solid #3b82f6', padding: '14px 16px', borderBottom: '1px solid #f1f5f9' }}>
-                  <div style={{ fontWeight: 600, color: '#1f2a37' }}>{currentUserId}</div>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>{userRole === 'admin' ? 'Administrator' : 'User'}</div>
-                </div>
-<button style={menuItem} onClick={handleChangePassword}>Change Password</button>
-                                
-              </div>
-            )}
-          </div>
+
+
         </div>
         {/* Real-time Dashboard Stats */}
         <div style={statsGrid}>
@@ -829,21 +946,95 @@ const handleChangePassword = async () => {
                   <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
                     {f.modifiedAt ? new Date(f.modifiedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
                   </td>
-                  <td style={tdStyle}>
-                    <button 
-                      onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])} 
-                      style={{ ...smallBtn, padding: '4px 10px', fontSize: 11, height: 24 }}
-                    >
-                      Download
-                    </button>
-                  </td>
+                                    <td style={tdStyle}>
+                                      {/* ✅ NEW DROPDOWN STRUCTURE */}
+                                      <div className="actions-container" ref={openActionMenuId === f.id ? actionMenuRef : null}>
+                                        <button 
+                                          className="actions-trigger" 
+                                          onClick={() => setOpenActionMenuId(openActionMenuId === f.id ? null : f.id)}
+                                        >
+                                          ...
+                                        </button>
+                                        {openActionMenuId === f.id && (
+                                          <div className="actions-dropdown">
+                                            <button className="actions-item" onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])}>Download</button>
+                                            <button className="actions-item" onClick={() => handleOpenEditModal(f)}>Edit Details</button>
+                                            <button className="actions-item delete" onClick={() => handleOpenDeleteModal(f)}>Delete File</button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
                 </tr>
               ))} 
             </tbody>
           </table>
         </div>
       </div>
-      
+      {/* ✅ NEW MODALS (place them at the end of the main div) */}
+            
+  {/* ✅ UPDATED EDIT MODAL */}
+            {isEditModalOpen && (
+                <div className="modal-overlay" onClick={handleCloseModals}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit File</h3>
+                        </div>
+                        {/* The form now uses the correct encoding type for file uploads */}
+                        <form onSubmit={handleUpdateFile} encType="multipart/form-data" className="modal-body">
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={label}>File Name (without extension)</label>
+                                <input name="name" value={editFormData.name} onChange={handleEditFormChange} style={input} required />
+                            </div>
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={label}>Category</label>
+                                <select name="category" value={editFormData.category} onChange={handleEditFormChange} style={select}>
+                                    {CATEGORY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                            </div>
+
+                            {/* Conditional input for "Others" category */}
+                            {editFormData.category === 'Others' && (
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={label}>Custom Category Name</label>
+                                    <input name="customCategory" value={editFormData.customCategory} onChange={handleEditFormChange} style={input} required />
+                                </div>
+                            )}
+
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={label}>Replace File (Optional)</label>
+                                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>Upload a new file to create a new version.</p>
+                                <input type="file" name="newFile" onChange={handleEditFormChange} style={input} />
+                            </div>
+                            
+                            <div className="modal-footer">
+                                <button type="button" className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
+                                <button type="submit" className="modal-button primary">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* DELETE CONFIRMATION MODAL */}
+            {isDeleteModalOpen && (
+                <div className="modal-overlay" onClick={handleCloseModals}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Confirm Deletion</h3>
+                        </div>
+                        <div className="modal-body">
+                            <p>
+                                Are you sure you want to permanently delete the file <span className="highlight">"{selectedFile?.name}.{selectedFile?.fileType}"</span>?
+                            </p>
+                            <p style={{ fontSize: '13px', color: '#dc2626' }}>This action cannot be undone.</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
+                            <button className="modal-button delete" onClick={handleDeleteFile}>Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
       {/* Success Notification */}
       {showSuccessNotification && (
         <div style={successNotificationVisible}>

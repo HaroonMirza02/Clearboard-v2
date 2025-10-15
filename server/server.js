@@ -10,7 +10,7 @@ const archiver = require('archiver');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
-const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata } = require('./services/gcs');
+const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata, deleteFromGCS } = require('./services/gcs');
 
 const app = express();
 
@@ -732,6 +732,115 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
   } catch (err) {
     console.error('Download error:', err);
     res.status(500).json({ message: 'Download failed', error: err.message });
+  }
+});
+
+
+// ✅ NEW: DELETE A FILE VERSION
+app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const meta = await loadMeta();
+    const fileToDelete = meta[fileId];
+
+    if (!fileToDelete) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    // Authorization: only owner or admin can delete
+    if (req.user.role !== 'admin' && fileToDelete.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // 1. Delete the file from Google Cloud Storage
+    await deleteFromGCS(fileToDelete.gcsObjectKey);
+
+    // 2. Remove the file's metadata
+    delete meta[fileId];
+
+    // 3. Save the updated metadata
+    await saveMeta(meta);
+
+    console.log(`File deleted successfully: ${fileId} by user ${req.user.userId}`);
+    res.status(200).json({ message: 'File deleted successfully' });
+
+  } catch (err) {
+    console.error('Delete file error:', err);
+    res.status(500).json({ message: 'Failed to delete file', error: err.message });
+  }
+});
+
+// ✅ REPLACE your old edit endpoint with this new one
+app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, res) => {
+  try {
+        console.log('Backend received req.body:', req.body);
+
+    const { fileId } = req.params;
+    const { name, category } = req.body;
+    const meta = await loadMeta();
+    const originalFile = meta[fileId];
+
+    if (!originalFile) {
+      return res.status(404).json({ message: 'File version not found' });
+    }
+
+    // Authorization check
+    if (req.user.role !== 'admin' && originalFile.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // --- SCENARIO 1: A new file was uploaded (creating a new version) ---
+    if (req.file) {
+      console.log(`New version upload for: ${originalFile.originalname}`);
+      // This logic is adapted from your original /upload endpoint
+      const { originalname: newName, mimetype, path: filePath } = req.file;
+      
+      // Find all versions of this file to calculate the next version number
+      const sameGroup = Object.values(meta).filter(f => 
+        f.originalname === originalFile.originalname && 
+        f.ownerId === originalFile.ownerId
+      );
+      const maxVersion = Math.max(...sameGroup.map(f => f.version || 1));
+      
+      const newVersionNumber = maxVersion + 1;
+      const newFileId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      const gcsObjectKey = `files/${newFileId}${path.extname(newName)}`;
+
+      // Upload the new file to GCS
+      const fileBuffer = fs.readFileSync(filePath);
+      await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
+      fs.unlinkSync(filePath); // Clean up temp file
+
+      const metadata = await getFileMetadata(gcsObjectKey);
+
+      // Create a new metadata entry for the new version
+      meta[newFileId] = {
+        ...originalFile, // Inherit properties from the original
+        id: newFileId,
+        gcsObjectKey,
+        version: newVersionNumber,
+        modifiedAt: new Date().toISOString(),
+        size: metadata.size,
+        // Update name and category if they were changed
+        originalname: `${name}${path.extname(originalFile.originalname)}`,
+        category: category,
+      };
+      
+    // --- SCENARIO 2: Only metadata (name/category) was changed ---
+    } else {
+      console.log(`Metadata update for: ${originalFile.originalname}`);
+      const originalExt = path.extname(originalFile.originalname);
+      originalFile.originalname = `${name}${originalExt}`;
+      originalFile.category = category;
+      originalFile.modifiedAt = new Date().toISOString();
+    }
+
+    await saveMeta(meta);
+    res.status(200).json({ message: 'File updated successfully' });
+
+  } catch (err) {
+    console.error('Edit file error:', err);
+    res.status(500).json({ message: 'Failed to edit file', error: err.message });
   }
 });
 

@@ -2,6 +2,7 @@
 // Google Cloud Storage helper
 const { Storage } = require('@google-cloud/storage');
 const stream = require('stream');
+const BUCKET_NAME = process.env.GCS_BUCKET_NAME;
 
 // Initialize storage with credentials from environment variables
 const storage = new Storage();
@@ -69,6 +70,22 @@ async function getFileMetadata(filename) {
   };
 }
 
+async function deleteFromGCS(gcsObjectKey) {
+  try {
+    await storage.bucket(BUCKET_NAME).file(gcsObjectKey).delete();
+    console.log(`Successfully deleted gs://${BUCKET_NAME}/${gcsObjectKey}`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete file from GCS: ${gcsObjectKey}`, error);
+    // Don't throw if the file doesn't exist (code 404)
+    if (error.code === 404) {
+      console.warn('File was already deleted or not found in GCS.');
+      return true;
+    }
+    throw error;
+  }
+}
+
 // Create a write stream to GCS
 function createGCSWriteStream(filename, contentType) {
   const bucket = getBucket();
@@ -84,5 +101,6 @@ module.exports = {
   getGCSDownloadStream, 
   getSignedUrl,
   createGCSWriteStream,
-  getFileMetadata
+  getFileMetadata,
+    deleteFromGCS
 };

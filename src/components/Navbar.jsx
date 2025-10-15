@@ -1,130 +1,161 @@
-import { Link, NavLink, useNavigate } from 'react-router';
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { API_ENDPOINTS } from '../utils/api'; // Make sure this path is correct
+import '../styles/Navbar.css'; // Import the new CSS file
 
 function Navbar() {
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [userRole, setUserRole] = useState('');
-  const dropdownRef = useRef(null);
-  const navigate = useNavigate();
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [is2faEnabled, setIs2faEnabled] = useState(false);
+    const [currentUser, setCurrentUser] = useState({ id: '', role: '' });
+    const menuRef = useRef(null);
+    const navigate = useNavigate();
 
-  useEffect(() => {
-    // Get user role from localStorage
-    const role = localStorage.getItem('role');
-    setUserRole(role || '');
-
-    // Close dropdown when clicking outside
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
+    // Fetch user status (including 2FA) when component mounts or token changes
+    const fetchUserData = async (token) => {
+        try {
+            const res = await fetch(API_ENDPOINTS.USER_STATUS, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error('Could not fetch user status');
+            const data = await res.json();
+            setIs2faEnabled(data.isTwoFactorEnabled || false);
+        } catch (err) {
+            console.error("Failed to fetch user status:", err);
+        }
     };
 
-    const handleAuthChanged = () => {
-      setUserRole(localStorage.getItem('role') || '');
+    useEffect(() => {
+        const handleAuthChange = () => {
+            const token = localStorage.getItem('token');
+            const userId = localStorage.getItem('userId');
+            const role = localStorage.getItem('role');
+
+            if (token && userId) {
+                setCurrentUser({ id: userId, role: role || '' });
+                fetchUserData(token);
+            } else {
+                setCurrentUser({ id: '', role: '' });
+            }
+        };
+
+        handleAuthChange(); // Initial check
+        window.addEventListener('auth-changed', handleAuthChange);
+        
+        // Close dropdown when clicking outside
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setIsMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('auth-changed', handleAuthChange);
+        };
+    }, []);
+    
+    // --- Actions ---
+
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('role');
+        localStorage.removeItem('userId');
+        setIsMenuOpen(false);
+        window.dispatchEvent(new Event('auth-changed'));
+        navigate('/');
+    };
+    
+    const handleChangePassword = async () => {
+        setIsMenuOpen(false);
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('You are not logged in.');
+
+            const res = await fetch(API_ENDPOINTS.CHANGE_PASSWORD, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message);
+            alert('A password reset link has been sent to your registered email address.');
+        } catch (err) {
+            alert(err.message || 'Failed to send reset link.');
+        }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('auth-changed', handleAuthChanged);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('auth-changed', handleAuthChanged);
+    const handleToggle2FA = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const newState = !is2faEnabled;
+        try {
+            const res = await fetch(API_ENDPOINTS.TOGGLE_2FA, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ enable: newState }),
+            });
+            if (!res.ok) throw new Error('Failed to update 2FA status');
+            
+            setIs2faEnabled(newState); // Update state on success
+            alert(`Two-Factor Authentication has been ${newState ? 'enabled' : 'disabled'}.`);
+        } catch (err) {
+            alert('Could not update 2FA status. Please try again.');
+        }
     };
-  }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('userId');
-    setShowDropdown(false);
-    navigate('/');
-    window.location.reload(); // Force re-render to show login screen
-  };
+    const userInitial = currentUser.id ? currentUser.id.charAt(0).toUpperCase() : '?';
 
-  const handleSignIn = () => {
-    if (localStorage.getItem('token')) {
-      navigate('/dashboard');
-    } else {
-      navigate('/department');
-    }
-  };
-
-  return (
-    <nav className="cb-navbar">
-      <div className="cb-nav-left">
-        <Link to="/" className="cb-brand">
-          {/* <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="cb-brand-icon">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg> */}
-          ClearBoard
-        </Link>
-        <ul className="cb-nav-links">
-          <li><a href="#features">Features</a></li>
-          <li><a href="#pricing">Pricing</a></li>
-          <li><a href="#about">About</a></li>
-        </ul>
-      </div>
-      <div className="cb-nav-right">
-        {localStorage.getItem('token') ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#eef2ff', color: '#1f2a37', fontWeight: 600, boxShadow: '0 4px 16px rgba(99,102,241,0.15)' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
-                {String(localStorage.getItem('userId') || 'U').slice(0,1).toUpperCase()}
-              </div>
-              <span style={{ fontSize: 14 }}>{localStorage.getItem('userId') || 'User'}</span>
-              {userRole === 'admin' && (
-                <span style={{ padding: '4px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700 }}>ADMIN</span>
-              )}
+    return (
+        <nav className="cb-navbar">
+            <div className="cb-nav-left">
+                <Link to="/" className="cb-brand">ClearBoard</Link>
+                <ul className="cb-nav-links">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#pricing">Pricing</a></li>
+                    <li><a href="#about">About</a></li>
+                </ul>
             </div>
-            <button
-              onClick={() => navigate('/dashboard')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 999,
-                background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                color: '#fff',
-                border: '1px solid #1e3a8a',
-                boxShadow: '0 6px 18px rgba(29,78,216,0.25)',
-                fontWeight: 700,
-                letterSpacing: 0.2,
-                cursor: 'pointer',
-                transition: 'transform .06s ease, box-shadow .2s ease'
-              }}
-              onMouseDown={e => (e.currentTarget.style.transform = 'translateY(1px)')}
-              onMouseUp={e => (e.currentTarget.style.transform = 'translateY(0)')}
-              onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 999,
-                background: 'linear-gradient(135deg,#111827,#1f2937)',
-                color: '#fff',
-                border: '1px solid #0f172a',
-                boxShadow: '0 6px 18px rgba(15,23,42,0.25)',
-                fontWeight: 700,
-                letterSpacing: 0.2,
-                cursor: 'pointer',
-                transition: 'transform .06s ease, box-shadow .2s ease'
-              }}
-              onMouseDown={e => (e.currentTarget.style.transform = 'translateY(1px)')}
-              onMouseUp={e => (e.currentTarget.style.transform = 'translateY(0)')}
-              onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
-            >
-              Logout
-            </button>
-          </div>
-        ) : (
-          <>
-            <button className="cb-nav-signin" onClick={handleSignIn}>LogIn</button>
-            <NavLink to="/department" className="cb-nav-cta">Sign Up</NavLink>
-          </>
-        )}
-      </div>
-    </nav>
-  );
+            <div className="cb-nav-right">
+                {currentUser.id ? (
+                    <div className="user-menu-container" ref={menuRef}>
+                        <button className="user-menu-trigger" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+                            <div className="user-avatar">{userInitial}</div>
+                            <span className="user-name">{currentUser.id}</span>
+                        </button>
+                        
+                        {isMenuOpen && (
+                            <div className="dropdown-menu">
+                                <div className="dropdown-header">
+                                    <div className="username">{currentUser.id}</div>
+                                    <div className="role">{currentUser.role}</div>
+                                </div>
+                                <button className="dropdown-item" onClick={() => { navigate('/dashboard'); setIsMenuOpen(false); }}>
+                                    Dashboard
+                                </button>
+                                <div className="dropdown-divider"></div>
+                                <button className="dropdown-item" onClick={handleToggle2FA}>
+                                    {is2faEnabled ? 'Disable 2FA' : 'Enable 2FA'}
+                                </button>
+                                <button className="dropdown-item" onClick={handleChangePassword}>
+                                    Change Password
+                                </button>
+                                <div className="dropdown-divider"></div>
+                                <button className="dropdown-item" onClick={handleLogout}>
+                                    Logout
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        <button className="cb-nav-signin" onClick={() => navigate('/department')}>LogIn</button>
+                        <Link to="/department" className="cb-nav-cta">Sign Up</Link>
+                    </>
+                )}
+            </div>
+        </nav>
+    );
 }
 
 export default Navbar;
