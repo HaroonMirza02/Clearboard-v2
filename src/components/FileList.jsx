@@ -913,28 +913,104 @@ const cancelBtnStyle = {
         
         {/* Upload Section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
-          <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
-            Upload a File
-            {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
-          </h2>
-          <div style={{ marginTop: 12 }}>
-            <div style={uploadGrid}>
-              <div>
-                <label style={label}>File</label>
-                <input 
-                  type="file" 
-                  multiple
-                  onChange={e => {
-                    const list = Array.from(e.target.files || []);
-                    setFilesToUpload(list);
-                    if (validationErrors.file) {
-                      setValidationErrors({ ...validationErrors, file: '' });
-                    }
-                  }} 
-                  style={input} 
-                />
-                {validationErrors.file && <div style={errorText}>{validationErrors.file}</div>}
-              </div>
+  <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
+    Upload a File
+    {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
+  </h2>
+
+  <div style={{ marginTop: 12 }}>
+    <div style={uploadGrid}>
+      <div>
+        <label style={label}>File</label>
+
+        <div
+          style={{
+            border: '2px dashed #d1d5db',
+            borderRadius: 10,
+            padding: '14px 12px',
+            textAlign: 'center',
+            backgroundColor: '#f9fafb',
+            transition: 'all 0.25s ease',
+            cursor: 'pointer',
+            position: 'relative',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3b82f6')}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#d1d5db')}
+        >
+          <input
+            type="file"
+            multiple
+            onChange={(e) => {
+              const list = Array.from(e.target.files || []);
+              setFilesToUpload(list);
+              if (validationErrors.file) {
+                setValidationErrors({ ...validationErrors, file: '' });
+              }
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: 0,
+              cursor: 'pointer',
+            }}
+          />
+
+          <div style={{ color: '#2563eb', fontWeight: 600, fontSize: 13 }}>
+            Click to upload or drag files
+          </div>
+          <div style={{ color: '#6b7280', fontSize: 10, marginTop: 2 }}>
+            PDF, JPG, PNG, DOCX, XLSX, PPTX etc.
+          </div>
+        </div>
+
+        {/* File list preview */}
+        {filesToUpload?.length > 0 && (
+          <ul
+            style={{
+              marginTop: 8,
+              background: '#f3f4f6',
+              borderRadius: 6,
+              border: '1px solid #e5e7eb',
+              padding: '6px 8px',
+              maxHeight: 90,
+              overflowY: 'auto',
+              fontSize: 12,
+              color: '#374151',
+            }}
+          >
+            {filesToUpload.map((file, idx) => (
+              <li
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '2px 0',
+                  borderBottom:
+                    idx !== filesToUpload.length - 1
+                      ? '1px solid #e5e7eb'
+                      : 'none',
+                }}
+              >
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file.name}
+                </span>
+                <span style={{ color: '#9ca3af', marginLeft: 8 }}>
+                  {(file.size / 1024).toFixed(1)} KB
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {validationErrors.file && (
+          <div style={{ ...errorText, marginTop: 4 }}>
+            {validationErrors.file}
+          </div>
+        )}
+      </div>
+    
+
               <div>
                 <label style={label}>Category</label>
                 <select 
