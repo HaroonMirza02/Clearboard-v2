@@ -215,8 +215,12 @@ function FileList() {
     // ✅ UPDATED handler to open the edit modal and populate state
     const handleOpenEditModal = (file) => {
         setSelectedFile(file);
-        // Check if the file's category is one of the standard options
-        const isStandardCategory = CATEGORY_OPTIONS.includes(file.category);
+        // Get all available categories (predefined + dynamic from existing files)
+        const uniqueCats = [...new Set(files.map(f => f.category))].sort();
+        const availableCategories = [...new Set([...CATEGORY_OPTIONS, ...uniqueCats])].sort();
+        
+        // Check if the file's category is one of the available options
+        const isCategoryInList = availableCategories.includes(file.category);
         
         // Get the currently displayed version for fileCreatedAt
         const selectedVersionNumber = selectedVersions[file.id] ?? file.versions[0].version;
@@ -224,8 +228,8 @@ function FileList() {
         
         setEditFormData({
             name: file.name,
-            category: isStandardCategory ? file.category : 'Others',
-            customCategory: isStandardCategory ? '' : file.category,
+            category: isCategoryInList ? file.category : 'Others',
+            customCategory: isCategoryInList ? '' : file.category,
             newFile: null,
             fileCreatedAt: displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toISOString().split('T')[0] : '',
         });
@@ -637,6 +641,9 @@ const handleChangePassword = async () => {
 
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
+  
+  // Combine predefined categories with unique categories for upload dropdown
+  const allCategories = [...new Set([...CATEGORY_OPTIONS, ...uniqueCategories])].sort();
 
   // Validation function
   const validateUpload = () => {
@@ -1023,8 +1030,8 @@ const cancelBtnStyle = {
                   }} 
                   style={select}
                 >
-                  <option value="">Select Category</option>
-                  {CATEGORY_OPTIONS.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+                  <option value="" disabled hidden>Select Category</option>
+                  {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
                   <option value="OtherText">Other (type below)</option>
                 </select>
                 {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
@@ -1284,7 +1291,7 @@ const cancelBtnStyle = {
                             <div style={{ marginBottom: '16px' }}>
                                 <label style={label}>Category</label>
                                 <select name="category" value={editFormData.category} onChange={handleEditFormChange} style={select}>
-                                    {CATEGORY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                    {allCategories.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                 </select>
                             </div>
 
