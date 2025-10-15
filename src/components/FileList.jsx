@@ -263,24 +263,52 @@ function FileList() {
         }
     };
     
-    const handleDeleteFile = async () => {
-        if (!selectedFile) return;
+// In FileList.jsx
+// REPLACE your old handleDeleteFile function with this one
 
-        try {
-            const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
+const handleDeleteFile = async () => {
+    if (!selectedFile) return;
+
+    try {
+        const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Failed to delete file from server');
+        
+        // This is the new, correct logic for updating the UI
+        setFiles(prevFiles => {
+            // Use .map to create a new array
+            const newFiles = prevFiles.map(fileGroup => {
+                // Check if this is the group we need to modify
+                const isTargetGroup = fileGroup.versions.some(v => v.id === selectedFile.id);
+
+                if (isTargetGroup) {
+                    // Filter out the deleted version
+                    const updatedVersions = fileGroup.versions.filter(v => v.id !== selectedFile.id);
+                    
+                    // If no versions are left, this group should be removed
+                    if (updatedVersions.length === 0) {
+                        return null; 
+                    }
+                    
+                    // Otherwise, return the group with the updated versions list
+                    return { ...fileGroup, versions: updatedVersions };
+                }
+                
+                // If it's not the target group, return it unchanged
+                return fileGroup;
             });
-            if (!res.ok) throw new Error('Failed to delete file');
-            
-            // Refresh file list
-            setFiles(files.filter(f => f.id !== selectedFile.id));
 
-            handleCloseModals();
-        } catch (err) {
-            alert(err.message || 'An error occurred.');
-        }
-    };
+            // Filter out any groups that were set to null (i.e., are now empty)
+            return newFiles.filter(Boolean);
+        });
+
+        handleCloseModals();
+    } catch (err) {
+        alert(err.message || 'An error occurred while updating the UI.');
+    }
+};
 
 
 const handleChangePassword = async () => {
@@ -894,79 +922,66 @@ const handleChangePassword = async () => {
                 <th style={thStyle}>Action</th>
               </tr>
             </thead>
-            <tbody>
-              {filteredFiles.length === 0 && (
-                <tr>
-                  <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 10 : 9}>
-                    <div style={{ fontSize: 48, marginBottom: 8 }}>
-                      {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
-                    </div>
-                    {filterCategory || filterDateFrom || filterDateTo 
-                      ? 'No files match the selected filters' 
-                      : 'Select filters above to view files'}
-                  </td>
-                </tr>
-              )}
-              {filteredFiles.map((f, idx) => (
-                <tr key={f.id} style={zebra(idx)}>
-                  <td style={{ ...tdStyle, fontWeight: 500, fontSize: 11 }}>{f.name}</td>
-                  <td style={tdStyle}>
-                    <span style={{ ...pill, background: '#e0e7ff', color: '#4338ca' }}>
-                      {f.fileType || 'N/A'}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>{f.size}</td>
-                  <td style={tdStyle}>
-                    <span style={{ ...pill, background: f.compressionType === 'none' ? '#f1f5f9' : '#dcfce7', color: f.compressionType === 'none' ? '#64748b' : '#166534' }}>
-                      {f.compressionType}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>{f.category}</td>
-                  <td style={tdStyle}>
+           <tbody>
+    {/* First, check if filteredFiles is empty to show the message */}
+    {filteredFiles.length === 0 && (
+        <tr>
+            <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 10 : 9}>
+                <div style={{ fontSize: 48, marginBottom: 8 }}>
+                    {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
+                </div>
+                {filterCategory || filterDateFrom || filterDateTo
+                    ? 'No files match the selected filters'
+                    : 'Select a filter above to view files'}
+            </td>
+        </tr>
+    )}
+
+    {/* Then, map over filteredFiles to render the rows */}
+    {filteredFiles.map((fileGroup, idx) => {
+        // SAFETY GUARD
+        if (!fileGroup.versions || fileGroup.versions.length === 0) {
+            return null;
+        }
+
+        const selectedVersionNumber = selectedVersions[fileGroup.id] ?? fileGroup.versions[0].version;
+        const displayedVersion = fileGroup.versions.find(v => v.version === selectedVersionNumber) || fileGroup.versions[0];
+
+        return (
+            <tr key={fileGroup.id} style={zebra(idx)}>
+                <td style={tdStyle}>{fileGroup.name}</td>
+                <td style={tdStyle}><span style={{ ...pill, background: '#eef2ff', color: '#4338ca' }}>{displayedVersion.fileType || 'N/A'}</span></td>
+                <td style={tdStyle}>{displayedVersion.size}</td>
+                <td style={tdStyle}><span style={{ ...pill, background: displayedVersion.compressionType === 'none' ? '#f1f5f9' : '#dcfce7', color: displayedVersion.compressionType === 'none' ? '#64748b' : '#166534' }}>{displayedVersion.compressionType}</span></td>
+                <td style={tdStyle}>{fileGroup.category}</td>
+                <td style={tdStyle}>
                     <select
-                      value={selectedVersions[f.id] ?? f.version}
-                      onChange={e => setSelectedVersions({ ...selectedVersions, [f.id]: Number(e.target.value) })}
-                      style={{ ...select, padding: '4px 8px', width: 70, fontSize: 11, height: 24 }}
+                        value={selectedVersionNumber}
+                        onChange={e => setSelectedVersions({ ...selectedVersions, [fileGroup.id]: Number(e.target.value) })}
+                        style={{ ...select, padding: '4px 8px', width: 70, fontSize: 12, height: 30 }}
                     >
-                      {(f.versions || [{ version: f.version, id: f.id }]).map(v => (
-                        <option key={v.version} value={v.version}>v{v.version}</option>
-                      ))}
+                        {fileGroup.versions.map(v => <option key={v.version} value={v.version}>v{v.version}</option>)}
                     </select>
-                  </td>
-                  {userRole === 'admin' && (
-                    <td style={tdStyle}>
-                      <span style={userBadge}>
-                        {f.ownerUserId}
-                      </span>
-                    </td>
-                  )}
-                  <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
-                    {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
-                  </td>
-                  <td style={{ ...tdStyle, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace' }}>
-                    {f.modifiedAt ? new Date(f.modifiedAt).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
-                  </td>
-                                    <td style={tdStyle}>
-                                      {/* ✅ NEW DROPDOWN STRUCTURE */}
-                                      <div className="actions-container" ref={openActionMenuId === f.id ? actionMenuRef : null}>
-                                        <button 
-                                          className="actions-trigger" 
-                                          onClick={() => setOpenActionMenuId(openActionMenuId === f.id ? null : f.id)}
-                                        >
-                                          ...
-                                        </button>
-                                        {openActionMenuId === f.id && (
-                                          <div className="actions-dropdown">
-                                            <button className="actions-item" onClick={() => handleDownload(f.id, f.name, f.fileType, selectedVersions[f.id])}>Download</button>
-                                            <button className="actions-item" onClick={() => handleOpenEditModal(f)}>Edit Details</button>
-                                            <button className="actions-item delete" onClick={() => handleOpenDeleteModal(f)}>Delete File</button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </td>
-                </tr>
-              ))} 
-            </tbody>
+                </td>
+                {userRole === 'admin' && <td style={tdStyle}>{fileGroup.ownerUserId}</td>}
+                <td style={tdStyle}>{displayedVersion.uploadedAt ? new Date(displayedVersion.uploadedAt).toLocaleDateString('en-GB') : '-'}</td>
+                <td style={tdStyle}>{displayedVersion.modifiedAt ? new Date(displayedVersion.modifiedAt).toLocaleDateString('en-GB') : '-'}</td>
+                <td style={tdStyle}>
+                    <div className="actions-container" ref={openActionMenuId === fileGroup.id ? actionMenuRef : null}>
+                        <button className="actions-trigger" onClick={() => setOpenActionMenuId(openActionMenuId === fileGroup.id ? null : fileGroup.id)}>...</button>
+                        {openActionMenuId === fileGroup.id && (
+                            <div className="actions-dropdown">
+                                <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>Download</button>
+                                <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>
+                                <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>
+                            </div>
+                        )}
+                    </div>
+                </td>
+            </tr>
+        );
+    })}
+</tbody>
           </table>
         </div>
       </div>

@@ -526,16 +526,17 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     const { compress = 'none', category = 'Others' } = req.body;
     
     console.log(`Upload request: ${originalname}, compress: ${compress}, category: ${category}, user: ${req.user.userId}`);
-    
+    // ✅ NEW: Get the base name without the extension
+    const baseName = path.parse(originalname).name;
     const meta = await loadMeta();
 
     // File owner is the current user
     const ownerId = req.user.id;
     const ownerUserId = req.user.userId;
 
-    // Versioning - filter by owner
+    // ✅ CHANGED: Find versions using baseName instead of originalname
     const sameGroup = Object.values(meta).filter(f => 
-      f.originalname === originalname && 
+      f.baseName === baseName && 
       (f.category || 'Others') === category &&
       f.ownerId === ownerId
     );
@@ -617,6 +618,7 @@ app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
     meta[id] = {
       id,
       originalname,
+      baseName,
       mimetype,
       gcsObjectKey,
       storageProvider: 'gcs',
@@ -795,9 +797,9 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
       // This logic is adapted from your original /upload endpoint
       const { originalname: newName, mimetype, path: filePath } = req.file;
       
-      // Find all versions of this file to calculate the next version number
+      // ✅ CHANGED: Find versions using baseName
       const sameGroup = Object.values(meta).filter(f => 
-        f.originalname === originalFile.originalname && 
+        f.baseName === originalFile.baseName && 
         f.ownerId === originalFile.ownerId
       );
       const maxVersion = Math.max(...sameGroup.map(f => f.version || 1));
@@ -812,25 +814,26 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
       fs.unlinkSync(filePath); // Clean up temp file
 
       const metadata = await getFileMetadata(gcsObjectKey);
-
-      // Create a new metadata entry for the new version
+      // ✅ CHANGED: When creating the new metadata entry
       meta[newFileId] = {
-        ...originalFile, // Inherit properties from the original
+        ...originalFile,
         id: newFileId,
         gcsObjectKey,
         version: newVersionNumber,
         modifiedAt: new Date().toISOString(),
         size: metadata.size,
-        // Update name and category if they were changed
-        originalname: `${name}${path.extname(originalFile.originalname)}`,
+        // Update name and category, and ensure new originalname/baseName are set
+        originalname: newName,
+        baseName: path.parse(newName).name, // Use the new file's base name
         category: category,
       };
       
     // --- SCENARIO 2: Only metadata (name/category) was changed ---
     } else {
-      console.log(`Metadata update for: ${originalFile.originalname}`);
+    // ✅ CHANGED: Also update baseName when only metadata changes
       const originalExt = path.extname(originalFile.originalname);
       originalFile.originalname = `${name}${originalExt}`;
+      originalFile.baseName = name; // Update the base name
       originalFile.category = category;
       originalFile.modifiedAt = new Date().toISOString();
     }
@@ -844,7 +847,7 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
   }
 });
 
-// List files endpoint
+// THIS IS THE CORRECT CODE. USE THIS INSTEAD.
 app.get('/api/files', auth, async (req, res) => {
   try {
     const meta = await loadMeta();
@@ -852,55 +855,51 @@ app.get('/api/files', auth, async (req, res) => {
     
     console.log(`List request from user: ${req.user.userId} (${req.user.role})`);
     
-    // Filter files based on user role
-    const userFiles = Object.values(meta).filter(f => 
-      isAdmin || f.ownerId === req.user.id
-    );
+    const userFiles = Object.values(meta).filter(f => isAdmin || f.ownerId === req.user.id);
+// ✅ ADD THIS LOGGING BLOCK TO INSPECT THE DATA
+console.log("--- INSPECTING ALL USER FILES BEFORE GROUPING ---");
+userFiles.forEach(f => {
+  console.log(`ID: ${f.id}, OriginalName: ${f.originalname}, BaseName: ${f.baseName}`);
+});
+console.log("-------------------------------------------");
 
     console.log(`Found ${userFiles.length} files for user`);
 
     const groups = {};
     userFiles.forEach(f => {
-      const key = `${f.originalname}||${f.category || 'Others'}||${f.ownerId}`;
+      // Use baseName OR calculate it for backwards compatibility
+      const groupName = f.baseName || path.parse(f.originalname).name;
+      const key = `${groupName}||${f.category || 'Others'}||${f.ownerId}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(f);
     });
 
-    const files = await Promise.all(
-      Object.values(groups).map(async arr => {
-        arr.sort((a, b) => (b.version || 1) - (a.version || 1));
-        const latest = arr[0];
-        const ext = latest.originalname.includes('.') ? latest.originalname.split('.').pop() : '';
-        const name = latest.originalname.replace(new RegExp(`\\.${ext}$`), '');
+    const files = Object.values(groups).map(arr => {
+      arr.sort((a, b) => (b.version || 1) - (a.version || 1));
+      const latest = arr[0];
 
-        let size = latest.size || 0;
+      // Return the new, correct data structure
+      return {
+        id: latest.id,
+        name: latest.baseName || path.parse(latest.originalname).name,
+        category: latest.category || 'Others',
+        ownerUserId: latest.ownerUserId || 'unknown',
         
-        if (!size && latest.storageProvider === 'gcs' && latest.gcsObjectKey) {
-          try {
-            const metadata = await getFileMetadata(latest.gcsObjectKey);
-            size = metadata.size;
-          } catch (err) {
-            console.error('Error fetching GCS metadata:', err);
-          }
-        }
-
-        return {
-          id: latest.id,
-          name,
-          fileType: ext,
-          size: (size / 1024).toFixed(1),
-          compressionType: latest.compressionType,
-          category: latest.category || 'Others',
-          version: latest.version || 1,
-          uploadedAt: latest.uploadedAt,
-          modifiedAt: latest.modifiedAt,
-          versions: arr.map(v => ({ version: v.version || 1, id: v.id })),
-          download: `/api/files/download/${latest.id}`,
-          storageProvider: latest.storageProvider || 'gcs',
-          ownerUserId: latest.ownerUserId || 'unknown'
-        };
-      })
-    );
+        // This creates the detailed array the frontend needs
+        versions: arr.map(v => {
+          const ext = path.parse(v.originalname).ext.replace('.', '');
+          return {
+            id: v.id,
+            version: v.version || 1,
+            fileType: ext,
+            size: (v.size / 1024).toFixed(1),
+            compressionType: v.compressionType,
+            uploadedAt: v.uploadedAt,
+            modifiedAt: v.modifiedAt
+          };
+        })
+      };
+    });
 
     res.json(files);
   } catch (err) {
@@ -909,36 +908,41 @@ app.get('/api/files', auth, async (req, res) => {
   }
 });
 
-// Download a specific version by number
+// In server.js
+
+// Replace your existing /api/files/download/:fileKey/version/:version endpoint with this one
 app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) => {
   try {
     const { fileKey, version } = req.params;
     const meta = await loadMeta();
-    const all = Object.values(meta);
-    const current = all.find(f => f.id === fileKey);
+    const allFiles = Object.values(meta);
+    const currentFile = allFiles.find(f => f.id === fileKey);
     
-    if (!current) {
+    if (!currentFile) {
       return res.status(404).json({ message: 'File not found' });
     }
     
     // Authorization check
-    if (req.user.role !== 'admin' && current.ownerId !== req.user.id) {
+    if (req.user.role !== 'admin' && currentFile.ownerId !== req.user.id) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const group = all.filter(f => 
-      f.originalname === current.originalname && 
-      (f.category || 'Others') === (current.category || 'Others') &&
-      f.ownerId === current.ownerId
+    // ✅ THIS IS THE FIX: We now group files by 'baseName'
+    const versionGroup = allFiles.filter(f => 
+      f.baseName === currentFile.baseName && 
+      (f.category || 'Others') === (currentFile.category || 'Others') &&
+      f.ownerId === currentFile.ownerId
     );
     
-    const target = group.find(f => (f.version || 1) === Number(version));
+    const targetVersion = versionGroup.find(f => (f.version || 1) === Number(version));
     
-    if (!target) {
+    if (!targetVersion) {
       return res.status(404).json({ message: 'Requested version not found' });
     }
     
-    res.redirect(`/api/files/download/${target.id}`);
+    // Redirect to the simple download endpoint with the correct ID for the target version
+    res.redirect(307, `/api/files/download/${targetVersion.id}`);
+
   } catch (err) {
     console.error('Version download error:', err);
     res.status(500).json({ message: 'Download failed', error: err.message });
