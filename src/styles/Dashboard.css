@@ -231,3 +231,57 @@ input:checked + .slider:before {
   background-color: #fef2f2; /* Light red on hover */
   color: #dc2626;
 }
+
+/* src/styles/Dashboard.css */
+
+/* ... (all your existing CSS) ... */
+
+/* ✅ NEW: Storage Quota Card Styling */
+.storage-quota-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.storage-quota-card h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 16px 0;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 12px;
+  background-color: #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+  transition: width 0.5s ease-in-out;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
+}
+
+.storage-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.storage-used-text {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.storage-left-text {
+  color: #4b5563;
+  font-weight: 500;
+}

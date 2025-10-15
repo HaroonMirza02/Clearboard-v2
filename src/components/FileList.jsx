@@ -152,6 +152,8 @@ const successNotificationVisible = {
 };
 
 function FileList() {
+  const STORAGE_QUOTA_MB = 5 * 1024; // 5GB in MB
+  const uploadAbortControllerRef = useRef(null);
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
   const [isSignup, setIsSignup] = useState(false);
@@ -182,7 +184,31 @@ function FileList() {
         customCategory: '',
         newFile: null,
     });
-     // ✅ --- NEW HANDLER FUNCTIONS FOR EDIT/DELETE ---
+  const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
+
+    if (!stats.storageUsedMB) {
+
+        return { percentageUsed: 0, spaceLeftGB: STORAGE_QUOTA_MB / 1024 };
+
+    }
+
+    const used = stats.storageUsedMB;
+
+    const percentage = Math.min((used / STORAGE_QUOTA_MB) * 100, 100);
+
+    const left = (STORAGE_QUOTA_MB - used) / 1024;
+
+
+
+    return {
+
+        percentageUsed: percentage.toFixed(2),
+
+        spaceLeftGB: left.toFixed(2)
+
+    };
+
+}, [stats.storageUsedMB, STORAGE_QUOTA_MB]);
 
     // ✅ UPDATED handler to open the edit modal and populate state
     const handleOpenEditModal = (file) => {
@@ -202,6 +228,13 @@ function FileList() {
         setSelectedFile(file);
         setIsDeleteModalOpen(true);
     };
+
+    const handleCancelUpload = () => {
+    if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
+        console.log("Upload cancelled by user.");
+    }
+};
 
     const handleCloseModals = () => {
         setIsEditModalOpen(false);
@@ -610,71 +643,89 @@ const handleChangePassword = async () => {
       setShowSuccessNotification(false);
     }, 3000);
   };
+// In FileList.jsx
+// REPLACE your old handleUpload function with this one
+// In FileList.jsx
+// This is the final, merged version of the function
 
-  const handleUpload = async (e) => {
+const handleUpload = async (e) => {
     e.preventDefault();
-    setError('');
-    setValidationErrors({});
-    
-    // Validate form
-    if (!validateUpload()) {
-      return;
-    }
+    if (!validateUpload()) return;
+
+    // From the new code: Create AbortController for cancellation
+    uploadAbortControllerRef.current = new AbortController();
     
     setIsUploading(true);
     setUploadProgress(0);
+    setError('');
     
     try {
-      // We'll upload sequentially to keep server-side logic unchanged
-      const total = filesToUpload.length;
-      let completed = 0;
+        const total = filesToUpload.length;
+        for (let i = 0; i < total; i++) {
+            const file = filesToUpload[i];
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('compress', compress);
 
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          // keep a smooth animation between real file uploads
-          if (prev >= Math.min(90, Math.floor((completed / Math.max(total, 1)) * 100))) return prev;
-          return prev + Math.random() * 8;
-        });
-      }, 200);
+            // From your original code: Correctly determines the final category
+            const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
+            if (!finalCategory) {
+                throw new Error("Category is missing. Please select or type a category.");
+            }
+            formData.append('category', finalCategory);
 
-      for (const f of filesToUpload) {
-        const form = new FormData();
-        form.append('file', f);
-        form.append('compress', compress);
-        form.append('category', category === 'OtherText' ? customCategory : category);
+            // Fetch request with the cancellation signal
+            const res = await fetch(API_ENDPOINTS.UPLOAD, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData,
+                signal: uploadAbortControllerRef.current.signal,
+            });
 
-        const res = await fetch(API_ENDPOINTS.UPLOAD, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form
-        });
-        if (!res.ok) throw new Error('Upload failed');
-        await res.json();
-        completed += 1;
-        setUploadProgress(Math.floor((completed / total) * 100));
-      }
+            if (!res.ok) throw new Error(`Upload failed for ${file.name}`);
+            
+            // Simple progress update
+            setUploadProgress(Math.round(((i + 1) / total) * 100));
+        }
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+        // From your original code: Reset form and refresh data on success
+        setFilesToUpload([]);
+        setCategory('Others');
+        setCustomCategory('');
+        setCompress('none');
+        if(document.querySelector('input[type="file"]')) {
+            document.querySelector('input[type="file"]').value = '';
+        }
+        showSuccessMessage();
+        await fetchFiles(); // Assuming fetchFiles is defined in your component
 
-      // Reset form
-      setFilesToUpload([]);
-      setCategory('Others');
-      setCustomCategory('');
-      setCompress('none');
-
-      // Show success message
-      showSuccessMessage();
-
-      // Refresh files and stats
-      await fetchFiles();
     } catch (err) {
-      setError('Upload failed. Please try again.');
+        // From the new code: Handles cancellation error
+        if (err.name === 'AbortError') {
+            setError('Upload was cancelled.');
+            console.log('Upload was cancelled by the user.');
+        } else {
+            setError(err.message || 'An error occurred during upload.');
+        }
     } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
+        // From the new code: Cleanup logic
+        setIsUploading(false);
+        setUploadProgress(0);
+        uploadAbortControllerRef.current = null;
     }
-  };
+};
+// In FileList.jsx, with your other style objects
+const cancelBtnStyle = {
+    background: '#fee2e2',
+    color: '#ef4444',
+    border: '1px solid #fecaca',
+    padding: '4px 10px',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    marginLeft: '16px'
+};
 
   const handleDownload = async (fileId, name, fileType, version) => {
     setError('');
@@ -757,6 +808,21 @@ const handleChangePassword = async () => {
             </div>
           </div>
         </div>
+        {/* ✅ NEW: Storage Quota Progress Bar */}
+<div className="storage-quota-card">
+    <h4>Storage Quota</h4>
+    <div className="progress-bar-container">
+        <div className="progress-bar-fill" style={{ width: `${percentageUsed}%` }}></div>
+    </div>
+    <div className="storage-details">
+        <span className="storage-used-text">
+            {stats.storageUsedMB.toFixed(2)} MB of 5 GB Used
+        </span>
+        <span className="storage-left-text">
+            {spaceLeftGB} GB Left
+        </span>
+    </div>
+</div>
         
         {/* Upload Section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
@@ -826,11 +892,14 @@ const handleChangePassword = async () => {
                 </select>
               </div>
               <div>
-                <button 
-                  onClick={handleUpload} 
-                  disabled={isUploading || filesToUpload.length === 0} 
-                  style={smallBtn}
-                >
+<button 
+    onClick={handleUpload} 
+    
+    // ✅ CHANGED: Add the new condition here
+    disabled={isUploading || filesToUpload.length === 0 || stats.storageUsedMB >= STORAGE_QUOTA_MB} 
+    
+    style={smallBtn}
+>
                   {isUploading ? 'Uploading...' : (filesToUpload.length > 1 ? `Upload ${filesToUpload.length} files` : 'Upload')}
                 </button>
               </div>
@@ -842,6 +911,10 @@ const handleChangePassword = async () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...</span>
                   <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{Math.round(uploadProgress)}%</span>
+                                  {/* ✅ NEW CANCEL BUTTON */}
+                <button onClick={handleCancelUpload} style={cancelBtnStyle}>
+                    Cancel
+                </button>
                 </div>
                 <div style={progressContainer}>
                   <div style={{ ...progressBar, width: `${uploadProgress}%` }}></div>
