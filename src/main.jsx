@@ -10,6 +10,7 @@ import DepartmentSelection from './components/DepartmentSelection.jsx'
 import Login from './components/Login.jsx'
 import Signup from './components/Signup.jsx'
 import ResetPassword from './components/ResetPassword'; // Adjust path
+import AboutPage from './components/AboutPage'; // ✅ Import the new About Page
 
 const router = createBrowserRouter([
   {
@@ -17,7 +18,8 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <Home /> },
       { path: '/department', element: <DepartmentSelection /> },
-      { path: '/login', element: <Login /> },
+      { path: '/about', element: <AboutPage /> },
+       { path: '/login', element: <Login /> },
       { path: '/signup', element: <Signup /> },
       { path: '/dashboard', element: <Dashboard /> },
       { path: '/reset-password/:token', element: <ResetPassword /> }, // move this up

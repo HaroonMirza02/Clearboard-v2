@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import './Home.css'; // Import the stylesheet
 function Home() {
   useEffect(() => {
     const observerOptions = {
@@ -38,8 +39,8 @@ function Home() {
         </div>
          
           <div className="cb-hero-actions">
-            <a href='/department'><button  className="cb-btn cb-btn-primary">Get Started Free</button></a>
-            <button className="cb-btn cb-btn-secondary">Learn More</button>
+            <a href='/department'><button  className="cb-btn cb-btn-secondary">Get Started</button></a>
+            <a href='/about'><button className="cb-btn cb-btn-secondary">Learn More</button></a>
           </div>
         </div>
         
@@ -47,7 +48,7 @@ function Home() {
       </section>
 
       {/* Features Section */}
-      <section className="cb-features max">
+      <section id="features" className="cb-features max">
         <div className="cb-features-header">
           <h2 className="cb-features-title">Everything you need for file management</h2>
           <p className="cb-features-subtitle">Built for teams that demand security, speed, and simplicity</p>
@@ -180,24 +181,7 @@ function Home() {
         </div>
       </section>
 
-      {/* CTA Section - Ready to simplify */}
-      <section className="cb-cta">
-        <div className="cb-cta-content">
-          <h2 className="cb-cta-title">
-            Ready to simplify your file management?
-          </h2>
-          <p className="cb-cta-subtitle">
-            Join thousands of teams already using ClearBoard to collaborate better.
-          </p>
-          <div className="cb-cta-actions">
-            <button className="cb-btn cb-btn-primary">Start Free Trial</button>
-            <button className="cb-btn cb-btn-secondary">Schedule Demo</button>
-          </div>
-          <p className="cb-cta-note">
-            No credit card required • 14-day free trial • Cancel anytime
-          </p>
-        </div>
-    </section>
+
 
     {/* <section className="cb-ctb">
     <h1 className="cb-hero-title">
@@ -212,30 +196,26 @@ function Home() {
             {/* <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="cb-brand-icon">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg> */}
-              <span>ClearBoard</span>
+<span style={{ textAlign: 'center', marginLeft: '65px', fontSize: '2rem', fontWeight: '600' }}>ClearBoard</span>
             </div>
             <p className="cb-footer-description">
               Professional file sharing and management for modern teams.
             </p>
           </div>
           
-          <div className="cb-footer-links">
+          <div style={{ marginRight: '55px'}} className="cb-footer-links">
             <div className="cb-footer-column">
               <h4>Product</h4>
               <ul>
                 <li><a href="#features">Features</a></li>
-                <li><a href="#pricing">Pricing</a></li>
                 <li><a href="#security">Security</a></li>
-                <li><a href="#enterprise">Enterprise</a></li>
               </ul>
             </div>
             
             <div className="cb-footer-column">
               <h4>Company</h4>
               <ul>
-                <li><a href="#about">About</a></li>
-                <li><a href="#blog">Blog</a></li>
-                <li><a href="#careers">Careers</a></li>
+                <li><a href="/about">About</a></li>
                 <li><a href="#contact">Contact</a></li>
               </ul>
             </div>
@@ -243,16 +223,14 @@ function Home() {
             <div className="cb-footer-column">
               <h4>Legal</h4>
               <ul>
-                <li><a href="#privacy">Privacy</a></li>
-                <li><a href="#terms">Terms</a></li>
-                <li><a href="#cookies">Cookie Policy</a></li>
+                <li><a href="#privacy">Privacy Policy</a></li>
               </ul>
             </div>
           </div>
         </div>
         
         <div className="cb-footer-bottom">
-          <p>© 2024 ClearBoard. All rights reserved.</p>
+          <p>© 2025 ClearBoard. All rights reserved.</p>
         </div>
       </footer>
     </div>

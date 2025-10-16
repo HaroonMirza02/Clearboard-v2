@@ -483,7 +483,7 @@ app.post('/api/login', async (req, res) => {
       }
     }
 
-    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '15m' });
     
     console.log(`User logged in: ${userId} (${user.role})`);
     

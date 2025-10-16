@@ -111,9 +111,8 @@ function Navbar() {
             <div className="cb-nav-left">
                 <Link to="/" className="cb-brand">ClearBoard</Link>
                 <ul className="cb-nav-links">
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="#pricing">Pricing</a></li>
-                    <li><a href="#about">About</a></li>
+                    <li><a href="/#features">Features</a></li>
+                    <li><a href="/about">About</a></li>
                 </ul>
             </div>
             <div className="cb-nav-right">
@@ -149,7 +148,7 @@ function Navbar() {
                     </div>
                 ) : (
                     <>
-                        <button className="cb-nav-signin" onClick={() => navigate('/department')}>LogIn</button>
+                        <button className="cb-nav-signin" onClick={() => navigate('/department')}>Login</button>
                         <Link to="/department" className="cb-nav-cta">Sign Up</Link>
                     </>
                 )}

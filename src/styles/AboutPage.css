@@ -1,0 +1,143 @@
+/* Suggestion: Add this to your main index.css for a great font
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+*/
+
+/* General container for the page */
+.about-container {
+  font-family: 'Poppins', sans-serif;
+  color: #333;
+  line-height: 1.6;
+}
+
+/* --- Hero Section --- */
+.about-hero {
+  background: linear-gradient(45deg, #eef2ff, #fafbff);
+  padding: 6rem 1rem;
+  text-align: center;
+}
+
+.about-hero-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.about-hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #1f2a37;
+  margin-bottom: 1rem;
+}
+
+.about-hero p {
+  font-size: 1.125rem;
+  color: #4b5563;
+}
+
+/* --- Mission Section --- */
+.about-mission {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 3rem;
+  max-width: 1200px;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}
+
+.mission-image-container img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.mission-text-container h2 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.mission-text-container p {
+  color: #4b5563;
+  font-size: 1.05rem;
+}
+
+/* --- Values Section --- */
+.about-values {
+  background-color: #f9fafb;
+  padding: 4rem 1rem;
+  text-align: center;
+}
+
+.about-values h2 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-bottom: 2.5rem;
+}
+
+.values-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.value-card {
+  background-color: #fff;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  text-align: left;
+}
+
+.value-card h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.value-card p {
+  color: #4b5563;
+}
+
+/* --- Call to Action Section --- */
+.about-cta {
+  text-align: center;
+  padding: 5rem 1rem;
+}
+
+.about-cta h2 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.about-cta p {
+  color: #4b5563;
+  margin-bottom: 2rem;
+}
+
+.cta-button {
+  background-color: #2563eb;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background-color 0.3s ease;
+}
+
+.cta-button:hover {
+  background-color: #1d4ed8;
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 768px) {
+  .about-hero h1 {
+    font-size: 2.5rem;
+  }
+  
+  .about-mission {
+    grid-template-columns: 1fr;
+  }
+}

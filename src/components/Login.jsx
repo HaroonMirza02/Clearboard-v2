@@ -64,6 +64,10 @@ function Login({ onLogin }) {
       localStorage.setItem('role', data.role);
       if (data.department) localStorage.setItem('department', data.department);
       if (data.userId) localStorage.setItem('userId', data.userId);
+// --- ADD THIS LINE ---
+// Calculate and store the exact time the session should expire
+const expiryTime = new Date().getTime() + 15 * 60 * 1000; // 15 minutes from now
+localStorage.setItem('sessionExpiry', expiryTime);
 
       try {
         window.dispatchEvent(new Event('auth-changed'));

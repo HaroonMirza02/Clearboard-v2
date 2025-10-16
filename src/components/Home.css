@@ -1,0 +1,294 @@
+/* ===================================
+   Modern ClearBoard Home Page Styles
+   =================================== */
+
+:root {
+  --primary: #85b6be;
+  --secondary: #84a6a7;
+  --text-dark: #0f172a;
+  --text-light: #64748b;
+  --bg-light: #f8fafc;
+  --card-bg: #ffffff;
+  --gradient: linear-gradient(135deg, var(--primary), var(--secondary));
+  --shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+  --radius: 18px;
+  --transition: all 0.3s ease;
+}
+
+.cb-home-page {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-light);
+  color: var(--text-dark);
+  overflow-x: hidden;
+}
+
+/* ===============================
+   HERO SECTION
+   =============================== */
+.cb-hero {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6rem 2rem 5rem;
+  background: radial-gradient(circle at top left, #eef2ff 0%, #ffffff 70%);
+}
+
+.cb-hero-content {
+  max-width: 1100px;
+  flex-direction: column; /* This is the key: it stacks the items vertically */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.cb-hero-text {
+  flex: 1;
+  min-width: 300px;
+}
+
+.cb-hero-secondary-title {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 1.2rem;
+}
+
+.cb-hero-secondary-highlight {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cb-hero-description {
+  font-size: 1.2rem;
+  color: var(--text-light);
+  margin-bottom: 2.5rem;
+  line-height: 1.7;
+  max-width: 500px;
+}
+
+.cb-hero-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.cb-btn {
+  padding: 0.9rem 2rem;
+  border-radius: 50px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition);
+}
+
+.cb-btn-primary {
+  background: var(--gradient);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+
+.cb-btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.25);
+}
+
+.cb-btn-secondary {
+  background: transparent;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+}
+
+.cb-btn-secondary:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ===============================
+   FEATURES SECTION
+   =============================== */
+.cb-features {
+  padding: 6rem 2rem;
+  text-align: center;
+}
+
+.cb-features-header {
+  margin-bottom: 3.5rem;
+}
+
+.cb-features-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+
+.cb-features-subtitle {
+  color: var(--text-light);
+  font-size: 1.1rem;
+}
+
+.cb-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2.5rem;
+  margin-top: 3rem;
+}
+
+.cb-feature-card {
+  background: var(--card-bg);
+  padding: 2.2rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+  text-align: left;
+}
+
+.cb-feature-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 30px rgba(99, 102, 241, 0.2);
+}
+
+.cb-feature-title {
+  font-size: 1.4rem;
+  color: var(--primary);
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+
+.cb-feature-description {
+  color: var(--text-light);
+  line-height: 1.6;
+}
+
+/* ===============================
+   CTA SECTION
+   =============================== */
+.cb-cta {
+  background: var(--gradient);
+  color: white;
+  text-align: center;
+  padding: 5rem 2rem;
+  border-radius: 0;
+  margin-top: 4rem;
+}
+
+.cb-cta-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 1.2rem;
+}
+
+.cb-cta-subtitle {
+  font-size: 1.2rem;
+  opacity: 0.9;
+  margin-bottom: 1.5rem;
+}
+
+.cb-cta-note {
+  font-size: 0.95rem;
+  opacity: 0.8;
+}
+/* ===============================
+   FOOTER
+   =============================== */
+.cb-footer {
+  /* Using a slightly more neutral dark slate for the background */
+  background: #0f172a; 
+  /* Main text color is now a brighter off-white */
+  color: #e2e8f0; 
+  padding: 4rem 2rem 2rem;
+  margin-top: 4rem;
+}
+
+.cb-footer-content {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+.cb-footer-logo span {
+  font-weight: 700;
+  font-size: 1.4rem;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cb-footer-description {
+  /* Using a much lighter gray for better readability */
+  color: #94a3b8; 
+  margin-top: 0.6rem;
+  max-width: 300px;
+}
+
+.cb-footer-column h4 {
+  /* Make headings stand out more */
+  color: #ffffff; 
+  font-weight: 700;
+  margin-bottom: 1rem; /* Added a bit more space */
+}
+
+.cb-footer-column ul {
+  list-style: none;
+  padding: 0;
+}
+
+.cb-footer-column li {
+  margin: 0.5rem 0; /* Added a bit more space */
+}
+
+.cb-footer-column a {
+  /* Lighter gray for links, matching the description */
+  color: #94a3b8; 
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.cb-footer-column a:hover {
+  /* Using your bright --primary color for a vibrant hover effect */
+  color: var(--primary); 
+}
+
+.cb-footer-bottom {
+  text-align: center;
+  padding-top: 3rem; /* More space */
+  margin-top: 3rem; /* More space */
+  font-size: 0.9rem;
+  color: #94a3b8; /* Use the same secondary text color */
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+/* ===============================
+   ANIMATIONS
+   =============================== */
+.cb-scroll-animate {
+  opacity: 0;
+  transform: translateY(25px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.cb-scroll-animate.cb-animate-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ===============================
+   RESPONSIVE
+   =============================== */
+@media (max-width: 900px) {
+  .cb-hero-content {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .cb-hero-secondary-title {
+    font-size: 2.2rem;
+  }
+
+  .cb-features-title {
+    font-size: 2rem;
+  }
+}

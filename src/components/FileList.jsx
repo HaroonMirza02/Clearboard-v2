@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef  } from 'react';
+import React, { useState, useEffect, useRef , useCallback } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
+import { useNavigate } from 'react-router-dom'; // ✅ ADD THIS LINE
+import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 
@@ -201,7 +203,6 @@ function FileList() {
     const left = (STORAGE_QUOTA_MB - used) / 1024;
 
 
-
     return {
 
         percentageUsed: percentage.toFixed(2),
@@ -397,6 +398,23 @@ const handleChangePassword = async () => {
   // --- NEW STATE & REF START ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
+const navigate = useNavigate(); // Initialize navigate
+
+  // --- ADD THIS SECTION ---
+  const handleIdle = useCallback(() => {
+    alert('Session expired due to inactivity. Please log in again.');
+    // Clear all session data
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('sessionExpiry');
+    // Redirect to login page
+    navigate('/login');
+ }, [navigate]);
+
+  // Use the idle timer hook. It will call handleIdle after 15 minutes of inactivity.
+  useIdleTimer(handleIdle, 15 * 60 * 1000);
+  // --- END OF NEW SECTION ---
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -497,8 +515,14 @@ const handleChangePassword = async () => {
         console.log(`File: ${fileGroup.name}, isOwner: ${fileGroup.isOwner}, isShared: ${fileGroup.isShared}`);
       });
       
-      setFiles(data);
-      
+// ✅ ADD THIS CHECK
+// Ensure that data is an array before setting the state
+if (Array.isArray(data)) {
+  setFiles(data);
+} else {
+  console.error("API did not return an array for files:", data);
+  setFiles([]); // Default to an empty array to prevent crashes
+}      
       // Calculate real-time stats
  // ✅ REPLACED: New, simpler stat calculation
         const totalFiles = data.length;
