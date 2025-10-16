@@ -6,11 +6,22 @@ import Fuse from 'fuse.js';
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 
-const CATEGORY_OPTIONS = [
-  'TechResearch',
-  'BusResearch',
-  'Others',
-];
+const TEAM_CATEGORIES = {
+  'Software Development': ['TechResearch','ProductDemo','WebDevAssets','Cloud','SourceCode'],
+  'Business Development': ['BusinessStrategyPlans','CompetitorAnalysis','MarketResearch','SalesPitchDecks','LeadGenerationReports'],
+  'Data and Research Analyst': ['BIDashboard','Datasets','TechResearch','WebDevAssets','Cloud'],
+  'Admin': [] // will be computed as union below
+};
+
+TEAM_CATEGORIES['Admin'] = Array.from(new Set([
+  ...TEAM_CATEGORIES['Software Development'],
+  ...TEAM_CATEGORIES['Business Development'],
+  ...TEAM_CATEGORIES['Data and Research Analyst'],
+]));
+
+const getTeamCategories = (dept) => {
+  return TEAM_CATEGORIES[dept] || [];
+};
 
 // Styles
 const pageStyle = { background: '#f4f7fb', minHeight: '100vh', padding: '48px 16px' };
@@ -168,7 +179,7 @@ function FileList() {
   const [error, setError] = useState('');
   const [filesToUpload, setFilesToUpload] = useState([]);
   const [compress, setCompress] = useState('none');
-  const [category, setCategory] = useState('Others');
+  const [category, setCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
   const [fileCreatedAt, setFileCreatedAt] = useState('');
   const [selectedVersions, setSelectedVersions] = useState({});
@@ -177,6 +188,7 @@ function FileList() {
   const [stats, setStats] = useState({ totalFiles: 0, storageUsedKB: 0, storageUsedMB: 0 });
   const [currentUserId, setCurrentUserId] = useState('');
   const [success, setSuccess] = useState('');
+  const [department, setDepartment] = useState('');
 // In FileList.jsx
 // ✅ --- NEW STATES FOR MODALS & ACTIONS ---
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -220,7 +232,7 @@ function FileList() {
         setSelectedFile(file);
         // Get all available categories (predefined + dynamic from existing files)
         const uniqueCats = [...new Set(files.map(f => f.category))].sort();
-        const availableCategories = [...new Set([...CATEGORY_OPTIONS, ...uniqueCats])].sort();
+        const availableCategories = [...new Set([...(getTeamCategories(department)), ...uniqueCats])].sort();
         
         // Check if the file's category is one of the available options
         const isCategoryInList = availableCategories.includes(file.category);
@@ -576,9 +588,11 @@ if (Array.isArray(data)) {
     }
       const savedRole = localStorage.getItem('role');
       const savedUserId = localStorage.getItem('userId');
+      const savedDepartment = localStorage.getItem('department');
       if (savedToken) setToken(savedToken);
       if (savedRole) setUserRole(savedRole);
       if (savedUserId) setCurrentUserId(savedUserId);
+      if (savedDepartment) setDepartment(savedDepartment);
     } catch {}
   }, []);
   
@@ -683,8 +697,8 @@ if (Array.isArray(data)) {
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
   
-  // Combine predefined categories with unique categories for upload dropdown
-  const allCategories = [...new Set([...CATEGORY_OPTIONS, ...uniqueCategories])].sort();
+  // Team-specific categories for upload dropdown
+  const allCategories = React.useMemo(() => getTeamCategories(department), [department]);
 
   // Validation function
   const validateUpload = () => {
@@ -761,7 +775,7 @@ const handleUpload = async (e) => {
 
         // From your original code: Reset form and refresh data on success
         setFilesToUpload([]);
-        setCategory('Others');
+        setCategory('');
         setCustomCategory('');
         setCompress('none');
         const today = new Date().toISOString().split('T')[0];
