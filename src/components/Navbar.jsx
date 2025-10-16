@@ -133,9 +133,9 @@ function Navbar() {
                                     Dashboard
                                 </button>
                                 <div className="dropdown-divider"></div>
-                                <button className="dropdown-item" onClick={handleToggle2FA}>
+                                {/* <button className="dropdown-item" onClick={handleToggle2FA}>
                                     {is2faEnabled ? 'Disable 2FA' : 'Enable 2FA'}
-                                </button>
+                                </button> */}
                                 <button className="dropdown-item" onClick={handleChangePassword}>
                                     Change Password
                                 </button>

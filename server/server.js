@@ -54,7 +54,7 @@ const upload = multer({ dest: UPLOADS_DIR });
 
 // Hardcoded users (legacy)
 const HARDCODED_USERS = [
-  { userId: 'HaroonMirza', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
+  { userId: 'HaroonMirza', email:'haroon.mirza040602@gmail.com', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
   { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user', department: 'Software Development' },
   { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
   { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user', department: 'Business Development' },
