@@ -190,7 +190,7 @@ function Signup() {
           <div className="form-group" style={{ marginTop: '1rem' }}>
             <ReCAPTCHA
               ref={recaptchaRef}
-              sitekey="6LdST9MrAAAAAEv9OsegrieLAp8m_maj_37GK-oT"
+              sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_"
               onChange={onRecaptchaChange}
               onExpired={onRecaptchaExpired}
               onErrored={onRecaptchaError}

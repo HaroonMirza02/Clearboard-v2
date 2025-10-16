@@ -140,7 +140,7 @@ localStorage.setItem('sessionExpiry', expiryTime);
         <div className="form-group" style={{ marginTop: '10px', transform: 'scale(0.95)', transformOrigin: 'left' }}>
           <ReCAPTCHA
             ref={recaptchaRef}
-            sitekey="6LdST9MrAAAAAEv9OsegrieLAp8m_maj_37GK-oT" // your site key
+            sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_" // your site key
             onChange={onRecaptchaChange}
             onExpired={onRecaptchaExpired}
             onErrored={onRecaptchaError}

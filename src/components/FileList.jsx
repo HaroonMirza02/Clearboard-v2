@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef , useCallback } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
 import { useNavigate } from 'react-router-dom'; // ✅ ADD THIS LINE
 import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
+import Fuse from 'fuse.js';
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 
@@ -158,6 +159,7 @@ function FileList() {
   const uploadAbortControllerRef = useRef(null);
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isSignup, setIsSignup] = useState(false);
   const [login, setLogin] = useState({ userId: '', password: '' });
   const [signup, setSignup] = useState({ userId: '', password: '', confirmPassword: '' });
@@ -637,32 +639,47 @@ if (Array.isArray(data)) {
     };
   }, []);
 
-  // Filter files based on selected criteria
-  const filteredFiles = files.filter(f => {
-    // Only show files if at least one filter is applied
-    const hasFilter = filterCategory || filterDateFrom || filterDateTo;
-    if (!hasFilter) return false;
+ const filteredFiles = React.useMemo(() => {
+    // Step 1: Apply the initial category and date filters as before
+    const preFiltered = files.filter(f => {
+        const hasFilter = filterCategory || filterDateFrom || filterDateTo;
+        if (!hasFilter) return false;
 
-    // Category filter
-    if (filterCategory && f.category !== filterCategory) return false;
+        if (filterCategory && f.category !== filterCategory) return false;
 
-    // Date filter
-    if (filterDateFrom || filterDateTo) {
-      const fileDate = new Date(f.uploadedAt);
-      if (filterDateFrom) {
-        const fromDate = new Date(filterDateFrom);
-        if (fileDate < fromDate) return false;
-      }
-      if (filterDateTo) {
-        const toDate = new Date(filterDateTo);
-        toDate.setHours(23, 59, 59, 999);
-        if (fileDate > toDate) return false;
-      }
+        if (filterDateFrom || filterDateTo) {
+            const fileDate = new Date(f.uploadedAt);
+            if (filterDateFrom) {
+                const fromDate = new Date(filterDateFrom);
+                if (fileDate < fromDate) return false;
+            }
+            if (filterDateTo) {
+                const toDate = new Date(filterDateTo);
+                toDate.setHours(23, 59, 59, 999);
+                if (fileDate > toDate) return false;
+            }
+        }
+        return true;
+    });
+
+    // Step 2: If the search query is empty, return the results from Step 1
+    if (!searchQuery.trim()) {
+        return preFiltered;
     }
 
-    return true;
-  });
+    // Step 3: Apply fuzzy search on the pre-filtered results
+    const fuse = new Fuse(preFiltered, {
+        keys: ['name'],       // The property you want to search
+        threshold: 0.4,       // Adjusts the "fuzziness" (0.0 = exact match, 1.0 = match anything)
+        includeScore: true,
+    });
 
+    const results = fuse.search(searchQuery);
+
+    // Map the results from Fuse.js back to the original file format
+    return results.map(result => result.item);
+
+}, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery]);
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
   
@@ -1129,9 +1146,12 @@ const cancelBtnStyle = {
 
         {/* Filter Section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
-          <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}></div>
+          <h2 style={{ margin: 0, color: '#1f2a37' }}>
             Filter Files
           </h2>
+
+  
           <div style={{ marginTop: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <div>
@@ -1184,6 +1204,44 @@ const cancelBtnStyle = {
               </div>
             )}
           </div>
+                    {/* ✨ NEW MODERN SEARCH BAR ✨ */}
+    <div style={{ position: 'relative', maxWidth: '320px', width: '100%' }}>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '12px',
+          transform: 'translateY(-50%)',
+          color: '#9ca3af',
+          pointerEvents: 'none'
+        }}
+      >
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        placeholder="Search filtered files..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        style={{
+          marginTop: 12,
+          ...input, // Inherits your base input style
+          height: '40px',
+          paddingLeft: '38px', // Make space for the icon
+          backgroundColor: '#f8fafc',
+        }}
+      />
+    </div>
         </div>
 
 
