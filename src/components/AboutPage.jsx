@@ -15,9 +15,10 @@ function AboutPage() {
 
       {/* 2. Our Mission Section */}
       <section className="about-mission">
-        <div className="mission-image-container">
-          <img src="https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=2070" alt="Team working collaboratively" />
-        </div>
+<div className="mission-image-container">
+  <img src="/assets/team.jpg" alt="Team working collaboratively" />
+</div>
+    
         <div className="mission-text-container">
           <h2>Our Mission</h2>
           <p>Our mission is to empower teams by providing a centralized and reliable platform for file management. We believe that with the right tools, any team can achieve seamless collaboration, enhance productivity, and maintain the highest standards of data security.</p>

@@ -263,6 +263,14 @@ function FileList() {
     }
 };
 
+    const removeFile = (index) => {
+        setFilesToUpload(prev => prev.filter((_, i) => i !== index));
+        // Clear file validation error if present
+        if (validationErrors.file) {
+            setValidationErrors({ ...validationErrors, file: '' });
+        }
+    };
+
     const handleCloseModals = () => {
         setIsEditModalOpen(false);
         setIsDeleteModalOpen(false);
@@ -736,44 +744,80 @@ const handleUpload = async (e) => {
     e.preventDefault();
     if (!validateUpload()) return;
 
-    // From the new code: Create AbortController for cancellation
+    // Create AbortController for cancellation
     uploadAbortControllerRef.current = new AbortController();
-    
+
     setIsUploading(true);
     setUploadProgress(0);
     setError('');
-    
+
     try {
-        const total = filesToUpload.length;
-        for (let i = 0; i < total; i++) {
-            const file = filesToUpload[i];
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('compress', compress);
+        const totalFiles = filesToUpload.length;
+        const loadedArray = new Array(totalFiles).fill(0);
+        const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
 
-            // From your original code: Correctly determines the final category
-            const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
-            if (!finalCategory) {
-                throw new Error("Category is missing. Please select or type a category.");
-            }
-            formData.append('category', finalCategory);
-            formData.append('fileCreatedAt', fileCreatedAt);
+        const uploadPromises = filesToUpload.map((file, index) => {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
 
-            // Fetch request with the cancellation signal
-            const res = await fetch(API_ENDPOINTS.UPLOAD, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-                signal: uploadAbortControllerRef.current.signal,
+                formData.append('file', file);
+                formData.append('compress', compress);
+
+                // Determine the final category
+                const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
+                if (!finalCategory) {
+                    reject(new Error("Category is missing. Please select or type a category."));
+                    return;
+                }
+                formData.append('category', finalCategory);
+                formData.append('fileCreatedAt', fileCreatedAt);
+
+                xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+// Track upload progress
+xhr.upload.addEventListener('progress', (event) => {
+    if (event.lengthComputable) {
+        loadedArray[index] = event.loaded;
+        const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
+        const totalProgress = (totalLoaded / totalSize) * 100;
+        setUploadProgress(Math.round(totalProgress)); // <--- THIS IS THE LINE TO CHANGE
+    }
+});
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        loadedArray[index] = file.size;
+                        const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
+                        const totalProgress = (totalLoaded / totalSize) * 100;
+                        setUploadProgress(Math.round(totalProgress));
+                        resolve();
+                    } else {
+                        reject(new Error(`Upload failed for ${file.name}`));
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error(`Upload failed for ${file.name}`));
+                });
+
+                xhr.addEventListener('abort', () => {
+                    reject(new Error('Upload was cancelled.'));
+                });
+
+                // Handle cancellation
+                uploadAbortControllerRef.current.signal.addEventListener('abort', () => {
+                    xhr.abort();
+                });
+
+                xhr.send(formData);
             });
+        });
 
-            if (!res.ok) throw new Error(`Upload failed for ${file.name}`);
-            
-            // Simple progress update
-            setUploadProgress(Math.round(((i + 1) / total) * 100));
-        }
+        await Promise.all(uploadPromises);
 
-        // From your original code: Reset form and refresh data on success
+        // Reset form and refresh data on success
         setFilesToUpload([]);
         setCategory('');
         setCustomCategory('');
@@ -784,18 +828,16 @@ const handleUpload = async (e) => {
             document.querySelector('input[type="file"]').value = '';
         }
         showSuccessMessage();
-        await fetchFiles(); // Assuming fetchFiles is defined in your component
+        await fetchFiles();
 
     } catch (err) {
-        // From the new code: Handles cancellation error
-        if (err.name === 'AbortError') {
+        if (err.message === 'Upload was cancelled.') {
             setError('Upload was cancelled.');
             console.log('Upload was cancelled by the user.');
         } else {
             setError(err.message || 'An error occurred during upload.');
         }
     } finally {
-        // From the new code: Cleanup logic
         setIsUploading(false);
         setUploadProgress(0);
         uploadAbortControllerRef.current = null;
@@ -1060,6 +1102,23 @@ const cancelBtnStyle = {
                 <span style={{ color: '#9ca3af', marginLeft: 8 }}>
                   {(file.size / 1024).toFixed(1)} KB
                 </span>
+                <button
+                  onClick={() => removeFile(idx)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc2626',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    marginLeft: 8,
+                    padding: '2px 4px',
+                    borderRadius: 2,
+                  }}
+                  title="Remove file"
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>
@@ -1140,21 +1199,25 @@ const cancelBtnStyle = {
             </div>
             
             {/* Progress Bar */}
-            {isUploading && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...</span>
-                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{Math.round(uploadProgress)}%</span>
-                                  {/* ✅ NEW CANCEL BUTTON */}
-                <button onClick={handleCancelUpload} style={cancelBtnStyle}>
-                    Cancel
-                </button>
-                </div>
-                <div style={progressContainer}>
-                  <div style={{ ...progressBar, width: `${uploadProgress}%` }}></div>
-                </div>
-              </div>
-            )}
+{/* --- REFINED PROGRESS BAR SECTION --- */}
+{isUploading && (
+  <div style={{ marginTop: 16 }}>
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+      <span style={{ fontSize: 13, color: '#475569', fontWeight: 500, flexGrow: 1 }}>
+        Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...
+      </span>
+      <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+        {uploadProgress}%
+      </span>
+      <button onClick={handleCancelUpload} style={cancelBtnStyle}>
+        Cancel
+      </button>
+    </div>
+    <div style={progressContainer}>
+      <div style={{ ...progressBar, width: `${uploadProgress}%` }} />
+    </div>
+  </div>
+)}
           </div>
         </div>
 
