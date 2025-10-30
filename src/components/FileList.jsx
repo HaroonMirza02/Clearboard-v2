@@ -166,10 +166,12 @@ const successNotificationVisible = {
 };
 
 function FileList() {
-  const STORAGE_QUOTA_MB = 5 * 1024; // 5GB in MB
   const uploadAbortControllerRef = useRef(null);
+  const progressIntervalRef = useRef(null);
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
+  // Dynamic storage quota: 20GB for admin, 5GB for others (in MB)
+  const STORAGE_QUOTA_MB = React.useMemo(() => (userRole === 'admin' ? 20 * 1024 : 5 * 1024), [userRole]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSignup, setIsSignup] = useState(false);
   const [login, setLogin] = useState({ userId: '', password: '' });
@@ -756,7 +758,14 @@ const handleUpload = async (e) => {
         const loadedArray = new Array(totalFiles).fill(0);
         const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
 
-        const uploadPromises = filesToUpload.map((file, index) => {
+        // Start progress interval for smoother updates
+        progressIntervalRef.current = setInterval(() => {
+            const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
+            const totalProgress = Math.min((totalLoaded / totalSize) * 100, 99); // Cap at 99% until complete
+            setUploadProgress(Math.round(totalProgress));
+        }, 100); // Update every 100ms
+
+        const uploadSingle = (file, index) => {
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 const formData = new FormData();
@@ -776,22 +785,16 @@ const handleUpload = async (e) => {
                 xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
-// Track upload progress
-xhr.upload.addEventListener('progress', (event) => {
-    if (event.lengthComputable) {
-        loadedArray[index] = event.loaded;
-        const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
-        const totalProgress = (totalLoaded / totalSize) * 100;
-        setUploadProgress(Math.round(totalProgress)); // <--- THIS IS THE LINE TO CHANGE
-    }
-});
+                // Track upload progress
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        loadedArray[index] = event.loaded;
+                    }
+                });
 
                 xhr.addEventListener('load', () => {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         loadedArray[index] = file.size;
-                        const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
-                        const totalProgress = (totalLoaded / totalSize) * 100;
-                        setUploadProgress(Math.round(totalProgress));
                         resolve();
                     } else {
                         reject(new Error(`Upload failed for ${file.name}`));
@@ -813,9 +816,19 @@ xhr.upload.addEventListener('progress', (event) => {
 
                 xhr.send(formData);
             });
-        });
+        };
 
-        await Promise.all(uploadPromises);
+        // Upload sequentially to avoid metadata race conditions on the server
+        for (let i = 0; i < totalFiles; i++) {
+            // If user cancelled, stop early
+            if (uploadAbortControllerRef.current?.signal.aborted) {
+                throw new Error('Upload was cancelled.');
+            }
+            await uploadSingle(filesToUpload[i], i);
+        }
+
+        // Set progress to 100% on completion
+        setUploadProgress(100);
 
         // Reset form and refresh data on success
         setFilesToUpload([]);
@@ -838,6 +851,11 @@ xhr.upload.addEventListener('progress', (event) => {
             setError(err.message || 'An error occurred during upload.');
         }
     } finally {
+        // Clear the progress interval
+        if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+        }
         setIsUploading(false);
         setUploadProgress(0);
         uploadAbortControllerRef.current = null;
@@ -1007,7 +1025,7 @@ const cancelBtnStyle = {
     </div>
     <div className="storage-details">
         <span className="storage-used-text">
-            {stats.storageUsedMB.toFixed(2)} MB of 5 GB Used
+            {stats.storageUsedMB.toFixed(2)} MB of {(STORAGE_QUOTA_MB / 1024).toFixed(0)} GB Used
         </span>
         <span className="storage-left-text">
             {spaceLeftGB} GB Left

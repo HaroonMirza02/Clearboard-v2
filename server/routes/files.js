@@ -173,14 +173,14 @@ router.get('/', auth, async (req, res, next) => {
  *                   type: string
  */
 const { uploadToGCS } = require('../services/gcs');
-router.post('/upload', upload.single('file'), async (req, res, next) => {
+router.post('/upload', auth, upload.single('file'), async (req, res, next) => {
   try {
     const { filename, contentType, size, category, compress = 'zip' } = req.body;
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    // Find or create File (no user context)
-    let file = await File.findOne({ name: filename });
+    // Find or create File with user context
+    let file = await File.findOne({ name: filename, ownerId: req.user._id });
     if (!file) {
-      file = await File.create({ name: filename, ownerId: null, category });
+      file = await File.create({ name: filename, ownerId: req.user._id, category });
     }
     const versionNumber = await FileVersion.countDocuments({ fileId: file._id }) + 1;
     // Upload to GCS
@@ -195,7 +195,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       size: req.file.size,
       contentType,
       checksum,
-      uploadedBy: null,
+      uploadedBy: req.user._id,
       status: 'stored'
     });
     res.json({ message: 'Upload complete', fileId: file._id });
