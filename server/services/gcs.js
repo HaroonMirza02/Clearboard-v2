@@ -72,8 +72,9 @@ async function getFileMetadata(filename) {
 
 async function deleteFromGCS(gcsObjectKey) {
   try {
-    await storage.bucket(BUCKET_NAME).file(gcsObjectKey).delete();
-    console.log(`Successfully deleted gs://${BUCKET_NAME}/${gcsObjectKey}`);
+    const bucket = getBucket();
+    await bucket.file(gcsObjectKey).delete();
+    console.log(`Successfully deleted gs://${bucket.name}/${gcsObjectKey}`);
     return true;
   } catch (error) {
     console.error(`Failed to delete file from GCS: ${gcsObjectKey}`, error);

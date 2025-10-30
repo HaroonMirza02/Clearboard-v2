@@ -76,15 +76,103 @@ function createTransport() {
     console.warn('SMTP not configured. OTP emails will be logged to console.');
     return null;
   }
+  // Use a pooled transport to reuse SMTP connections and reduce handshake latency
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    rateDelta: 1000,   // per second window
+    rateLimit: 10,     // max messages per second
+    keepAlive: true,
+    connectionTimeout: 10000,
+    greetingTimeout: 5000,
+    socketTimeout: 15000,
   });
 }
 
 const mailer = createTransport();
+// Warm up SMTP connection at startup to avoid first-email delay
+if (mailer) {
+  mailer.verify().then(() => {
+    console.log('SMTP connection verified (pooled).');
+  }).catch((e) => {
+    console.warn('SMTP verify failed:', e?.message || e);
+  });
+}
+
+// -------- Email Templates (HTML) --------
+const EMAIL_BRAND = 'ClearBoard';
+const emailBaseTemplate = (title, contentHtml) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:Segoe UI, Roboto, Helvetica, Arial, sans-serif;color:#111827;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f4f6f8;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;box-shadow:0 6px 24px rgba(16,24,40,0.08);overflow:hidden;">
+          <tr>
+            <td style="padding:20px 24px;background:linear-gradient(180deg,#eef2ff,#ffffff);border-bottom:1px solid #eef2ff;">
+              <div style="font-weight:800;font-size:20px;color:#1f2937;">${EMAIL_BRAND}</div>
+              <div style="font-size:13px;color:#6b7280;margin-top:4px;">${title}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              ${contentHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px;border-top:1px solid #f1f5f9;background:#fafafa;color:#6b7280;font-size:12px;">
+              If you did not request this, you can safely ignore this email.
+            </td>
+          </tr>
+        </table>
+        <div style="margin-top:12px;color:#9ca3af;font-size:11px;">© ${new Date().getFullYear()} ${EMAIL_BRAND}. All rights reserved.</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+const ctaButton = (href, label) => `
+  <a href="${href}" target="_blank" rel="noopener" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;font-size:14px;">
+    ${label}
+  </a>
+`;
+
+const resetPasswordHtml = (userId, link) => emailBaseTemplate(
+  'Reset your password',
+  `
+  <p style="margin:0 0 12px 0;font-size:14px;color:#374151;">Hi <strong>${userId}</strong>,</p>
+  <p style="margin:0 0 16px 0;font-size:14px;color:#374151;">Click the button below to reset your password. This link will expire in <strong>15 minutes</strong>.</p>
+  <div style="margin:16px 0;">
+    ${ctaButton(link, 'Reset Password')}
+  </div>
+  <p style="margin:16px 0 8px 0;font-size:12px;color:#6b7280;">Button not working? Copy and paste this URL into your browser:</p>
+  <div style="word-break:break-all;font-size:12px;color:#2563eb;">${link}</div>
+  `
+);
+
+const otpHtml = (userId, code) => emailBaseTemplate(
+  'Your verification code',
+  `
+  <p style="margin:0 0 12px 0;font-size:14px;color:#374151;">Hi <strong>${userId || 'there'}</strong>,</p>
+  <p style="margin:0 0 12px 0;font-size:14px;color:#374151;">Use the following one-time code to verify your email. It expires in <strong>5 minutes</strong>.</p>
+  <div style="margin:12px 0;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;font-size:22px;font-weight:800;letter-spacing:4px;text-align:center;color:#111827;">
+    ${code}
+  </div>
+  <p style="margin:12px 0 0 0;font-size:12px;color:#6b7280;">If you didn’t request this, you can ignore this email.</p>
+  `
+);
 
 // Cloud-based metadata storage keys
 const META_GCS_KEY = 'metadata/filemeta.json';
@@ -280,9 +368,22 @@ app.post('/api/auth/change-password', auth, async (req, res) => {
         // ... (email sending logic remains the same)
         const subject = 'Your Password Reset Link';
         const text = `Hi ${currentUser.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+        const html = resetPasswordHtml(currentUser.userId, resetLink);
         
         if (mailer) {
-            await mailer.sendMail({ from: EMAIL_FROM, to: userEmail, subject, text });
+            await mailer.sendMail({ 
+                from: EMAIL_FROM, 
+                to: userEmail, 
+                subject, 
+                text,
+                html,
+                priority: 'high',
+                headers: {
+                  'X-Priority': '1',
+                  'X-MSMail-Priority': 'High',
+                  'Importance': 'high'
+                }
+            });
         } else {
             console.log(`[DEV PASSWORD RESET LINK] For ${userEmail}: ${resetLink}`);
         }
@@ -319,9 +420,22 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         // ... (email sending logic remains the same)
         const subject = 'Your Password Reset Link';
         const text = `Hi ${user.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+        const html = resetPasswordHtml(user.userId, resetLink);
         
         if (mailer) {
-            await mailer.sendMail({ from: EMAIL_FROM, to: email, subject, text });
+            await mailer.sendMail({ 
+                from: EMAIL_FROM, 
+                to: email, 
+                subject, 
+                text,
+                html,
+                priority: 'high',
+                headers: {
+                  'X-Priority': '1',
+                  'X-MSMail-Priority': 'High',
+                  'Importance': 'high'
+                }
+            });
         } else {
             console.log(`[DEV PASSWORD RESET LINK] For ${email}: ${resetLink}`);
         }
@@ -390,9 +504,22 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     const subject = 'Your ClearBoard verification code';
     const text = `Your verification code is: ${code}. It expires in 5 minutes.`;
+    const html = otpHtml('', code);
 
     if (mailer) {
-      await mailer.sendMail({ from: EMAIL_FROM, to: email, subject, text });
+      await mailer.sendMail({ 
+        from: EMAIL_FROM, 
+        to: email, 
+        subject, 
+        text,
+        html,
+        priority: 'high',
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
+      });
     } else {
       console.log(`[DEV OTP] ${email} -> ${code}`);
     }

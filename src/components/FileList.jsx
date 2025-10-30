@@ -530,6 +530,20 @@ const navigate = useNavigate(); // Initialize navigate
       const res = await fetch(API_ENDPOINTS.FILES, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
+
+      // Handle expired/invalid session: auto-logout and redirect
+      if (res.status === 401 || res.status === 403) {
+        alert('Your session has expired. Please log in again.');
+        try {
+          localStorage.removeItem('token');
+          localStorage.removeItem('role');
+          localStorage.removeItem('userId');
+          localStorage.removeItem('sessionExpiry');
+        } catch {}
+        navigate('/login');
+        return;
+      }
+
       if (!res.ok) throw new Error('Failed to fetch files');
       const data = await res.json();
       
