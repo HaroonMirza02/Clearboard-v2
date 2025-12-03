@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import ReCAPTCHA from 'react-google-recaptcha';
 import '../styles/auth.css';
 import { API_ENDPOINTS } from '../utils/api';
 
-function Login({ onLogin }) {
+function AdminLogin() {
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -48,11 +48,15 @@ function Login({ onLogin }) {
         body: JSON.stringify({
           userId,
           password,
+          department: 'Admin', // Admin always uses Admin department
           'g-recaptcha-response': recaptchaToken,
         }),
       });
 
-      if (!res.ok) throw new Error('Invalid credentials');
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Invalid admin credentials');
+      }
 
       const data = await res.json();
       localStorage.setItem('token', data.token);
@@ -60,10 +64,8 @@ function Login({ onLogin }) {
       if (data.department) localStorage.setItem('department', data.department);
       if (data.userId) localStorage.setItem('userId', data.userId);
       
-      // Mark the login source
-      if (data.role === 'admin') {
-        localStorage.setItem('adminLoginSource', 'user-login');
-      }
+      // Mark that admin logged in from CEO Portal
+      localStorage.setItem('adminLoginSource', 'ceo-portal');
       
       // Calculate and store the exact time the session should expire
       const expiryTime = new Date().getTime() + 15 * 60 * 1000; // 15 minutes from now
@@ -73,46 +75,27 @@ function Login({ onLogin }) {
         window.dispatchEvent(new Event('auth-changed'));
       } catch {}
 
-      if (onLogin) onLogin();
-      navigate('/dashboard');
+      setSuccess('Login successful. Redirecting...');
+      setTimeout(() => navigate('/admin-dashboard'), 500);
     } catch (err) {
-      setError(err.message || 'Invalid credentials');
+      setError(err.message || 'Login failed');
       if (recaptchaRef.current) recaptchaRef.current.reset();
       setRecaptchaToken(null);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    setError('');
-    setSuccess('');
-    const email = prompt('Please enter your registered email address:');
-    if (!email) return;
-
-    try {
-      const res = await fetch(API_ENDPOINTS.FORGOT_PASSWORD, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      setSuccess('If an account exists for that email, a reset link has been sent.');
-    } catch (err) {
-      setError(err.message || 'Failed to send reset link.');
     }
   };
 
   return (
     <div className="auth-container">
       <div className="auth-header">
-        <h2>Login</h2>
+        <h2>CEO Portal</h2>
+        <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '8px' }}>
+          Admin access only
+        </p>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <div className="form-group">
-          <label>User ID</label>
+          <label>Admin Username</label>
           <input
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
@@ -122,7 +105,7 @@ function Login({ onLogin }) {
         </div>
 
         <div className="form-group">
-          <label>Password</label>
+          <label>Admin Password</label>
           <input
             type="password"
             value={password}
@@ -131,11 +114,11 @@ function Login({ onLogin }) {
           />
         </div>
 
-        {/* ✅ reCAPTCHA added here */}
+        {/* reCAPTCHA */}
         <div className="form-group" style={{ marginTop: '10px', transform: 'scale(0.95)', transformOrigin: 'left' }}>
           <ReCAPTCHA
             ref={recaptchaRef}
-            sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_" // your site key
+            sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_"
             onChange={onRecaptchaChange}
             onExpired={onRecaptchaExpired}
             onErrored={onRecaptchaError}
@@ -154,25 +137,17 @@ function Login({ onLogin }) {
             cursor: !recaptchaToken ? 'not-allowed' : 'pointer',
           }}
         >
-          Login
+          Login as Admin
         </button>
       </form>
 
-      {/* Forgot Password */}
       <div className="auth-footer" style={{ marginTop: '10px' }}>
-        <button className="link-button" onClick={handleForgotPassword}>
-          Forgot Password?
-        </button>
-      </div>
-
-      <div className="auth-footer">
-        Don't have an account?{' '}
-        <Link to="/signup">
-          Create new account
-        </Link>
+        <p style={{ fontSize: '0.85rem', color: '#999' }}>
+          This portal is restricted to authorized administrators only.
+        </p>
       </div>
     </div>
   );
 }
 
-export default Login;
+export default AdminLogin;

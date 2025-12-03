@@ -39,7 +39,7 @@ function Home() {
         </div>
          
           <div className="cb-hero-actions">
-            <a href='/department'><button  className="cb-btn cb-btn-secondary">Get Started</button></a>
+            <a href='/login'><button  className="cb-btn cb-btn-secondary">Get Started</button></a>
             <a href='/about'><button className="cb-btn cb-btn-secondary">Learn More</button></a>
           </div>
         </div>

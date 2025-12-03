@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef , useCallback } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
-import { useNavigate } from 'react-router-dom'; // ✅ ADD THIS LINE
+import { useNavigate, useLocation } from 'react-router-dom'; // ✅ UPDATED: include useLocation
 import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import Fuse from 'fuse.js';
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
+import AdminUserFilter from './AdminUserFilter';
 
 const TEAM_CATEGORIES = {
   'Software Development': ['TechResearch','ProductDemo','WebDevAssets','Cloud','SourceCode'],
@@ -22,6 +23,16 @@ TEAM_CATEGORIES['Admin'] = Array.from(new Set([
 const getTeamCategories = (dept) => {
   return TEAM_CATEGORIES[dept] || [];
 };
+
+// Fixed list of admin project filters used in CEO Portal > Projects card
+const ADMIN_PROJECTS = [
+  'Website Project',
+  'Software Project',
+  'Dashboards',
+  'Graphic Design',
+  'Resources',
+  'R&D',
+];
 
 // Styles
 const pageStyle = { background: '#f4f7fb', minHeight: '100vh', padding: '48px 16px' };
@@ -165,11 +176,16 @@ const successNotificationVisible = {
   transform: 'translateX(0)'
 };
 
-function FileList() {
+function FileList(props) {
+  const [adminOwnerFilter, setAdminOwnerFilter] = React.useState('');
+  const [adminFilterMode, setAdminFilterMode] = useState('owner'); // 'owner' or 'project'
+  const [adminProjectFilter, setAdminProjectFilter] = useState('');
   const uploadAbortControllerRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
+  // readOnlyMode removed — keep a default false to avoid runtime errors from leftover checks
+  const readOnlyMode = false;
   // Dynamic storage quota: 20GB for admin, 5GB for others (in MB)
   const STORAGE_QUOTA_MB = React.useMemo(() => (userRole === 'admin' ? 20 * 1024 : 5 * 1024), [userRole]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -231,31 +247,30 @@ function FileList() {
 
     // ✅ UPDATED handler to open the edit modal and populate state
     const handleOpenEditModal = (file) => {
-        setSelectedFile(file);
-        // Get all available categories (predefined + dynamic from existing files)
-        const uniqueCats = [...new Set(files.map(f => f.category))].sort();
-        const availableCategories = [...new Set([...(getTeamCategories(department)), ...uniqueCats])].sort();
-        
-        // Check if the file's category is one of the available options
-        const isCategoryInList = availableCategories.includes(file.category);
-        
-        // Get the currently displayed version for fileCreatedAt
-        const selectedVersionNumber = selectedVersions[file.id] ?? file.versions[0].version;
-        const displayedVersion = file.versions.find(v => v.version === selectedVersionNumber) || file.versions[0];
-        
-        setEditFormData({
-            name: file.name,
-            category: isCategoryInList ? file.category : 'Others',
-            customCategory: isCategoryInList ? '' : file.category,
-            newFile: null,
-            fileCreatedAt: displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toISOString().split('T')[0] : '',
-        });
-        setIsEditModalOpen(true);
+      if (readOnlyMode) return; // Block in read-only
+      setSelectedFile(file);
+      // Get all available categories (predefined + dynamic from existing files)
+      const uniqueCats = [...new Set(files.map(f => f.category))].sort();
+      const availableCategories = [...new Set([...(getTeamCategories(department)), ...uniqueCats])].sort();
+      // Check if the file's category is one of the available options
+      const isCategoryInList = availableCategories.includes(file.category);
+      // Get the currently displayed version for fileCreatedAt
+      const selectedVersionNumber = selectedVersions[file.id] ?? file.versions[0].version;
+      const displayedVersion = file.versions.find(v => v.version === selectedVersionNumber) || file.versions[0];
+      setEditFormData({
+        name: file.name,
+        category: isCategoryInList ? file.category : 'Others',
+        customCategory: isCategoryInList ? '' : file.category,
+        newFile: null,
+        fileCreatedAt: displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toISOString().split('T')[0] : '',
+      });
+      setIsEditModalOpen(true);
     };
 
     const handleOpenDeleteModal = (file) => {
-        setSelectedFile(file);
-        setIsDeleteModalOpen(true);
+      if (readOnlyMode) return; // Block in read-only
+      setSelectedFile(file);
+      setIsDeleteModalOpen(true);
     };
 
     const handleCancelUpload = () => {
@@ -281,104 +296,87 @@ function FileList() {
 
     // ✅ UPDATED handler to manage form changes (including the file input)
     const handleEditFormChange = (e) => {
-        const { name, value, files } = e.target;
-        if (name === 'newFile') {
-            setEditFormData({ ...editFormData, newFile: files[0] });
-        } else {
-            setEditFormData({ ...editFormData, [name]: value });
-        }
+      if (readOnlyMode) return; // Block in read-only
+      const { name, value, files } = e.target;
+      if (name === 'newFile') {
+        setEditFormData({ ...editFormData, newFile: files[0] });
+      } else {
+        setEditFormData({ ...editFormData, [name]: value });
+      }
     };
 
     // ✅ REWRITTEN handler to submit the form as multipart/form-data
     const handleUpdateFile = async (e) => {
-        e.preventDefault();
-        if (!selectedFile) return;
+      e.preventDefault();
+      if (readOnlyMode) return; // Block in read-only
+      if (!selectedFile) return;
 
-        const formData = new FormData();
-        
-        // Determine the final category name
-        const finalCategory = editFormData.category === 'Others' 
-            ? editFormData.customCategory 
-            : editFormData.category;
+      const formData = new FormData();
+      // Determine the final category name
+      const finalCategory = editFormData.category === 'Others' 
+        ? editFormData.customCategory 
+        : editFormData.category;
 
-        formData.append('name', editFormData.name);
-        formData.append('category', finalCategory);
-        formData.append('fileCreatedAt', editFormData.fileCreatedAt);
-        
-        // Append the new file only if one was selected
-        if (editFormData.newFile) {
-            formData.append('newFile', editFormData.newFile);
+      formData.append('name', editFormData.name);
+      formData.append('category', finalCategory);
+      formData.append('fileCreatedAt', editFormData.fileCreatedAt);
+      // Append the new file only if one was selected
+      if (editFormData.newFile) {
+        formData.append('newFile', editFormData.newFile);
+      }
+
+      try {
+        // Note: We do NOT set the 'Content-Type' header. 
+        // The browser will automatically set it to 'multipart/form-data' with the correct boundary.
+        const res = await fetch(API_ENDPOINTS.EDIT_FILE(selectedFile.id), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData, // Send the FormData object
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.message || 'Failed to update file');
         }
-
-        try {
-            // Note: We do NOT set the 'Content-Type' header. 
-            // The browser will automatically set it to 'multipart/form-data' with the correct boundary.
-            const res = await fetch(API_ENDPOINTS.EDIT_FILE(selectedFile.id), {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                body: formData, // Send the FormData object
-            });
-
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.message || 'Failed to update file');
-            }
-            
-            await fetchFiles(token); // Refresh the file list
-            handleCloseModals();
-
-        } catch (err) {
-            alert(err.message);
-        }
+        await fetchFiles(token); // Refresh the file list
+        handleCloseModals();
+      } catch (err) {
+        alert(err.message);
+      }
     };
     
 // In FileList.jsx
 // REPLACE your old handleDeleteFile function with this one
 
 const handleDeleteFile = async () => {
-    if (!selectedFile) return;
-
-    try {
-        const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error('Failed to delete file from server');
-        
-        // This is the new, correct logic for updating the UI
-        setFiles(prevFiles => {
-            // Use .map to create a new array
-            const newFiles = prevFiles.map(fileGroup => {
-                // Check if this is the group we need to modify
-                const isTargetGroup = fileGroup.versions.some(v => v.id === selectedFile.id);
-
-                if (isTargetGroup) {
-                    // Filter out the deleted version
-                    const updatedVersions = fileGroup.versions.filter(v => v.id !== selectedFile.id);
-                    
-                    // If no versions are left, this group should be removed
-                    if (updatedVersions.length === 0) {
-                        return null; 
-                    }
-                    
-                    // Otherwise, return the group with the updated versions list
-                    return { ...fileGroup, versions: updatedVersions };
-                }
-                
-                // If it's not the target group, return it unchanged
-                return fileGroup;
-            });
-
-            // Filter out any groups that were set to null (i.e., are now empty)
-            return newFiles.filter(Boolean);
-        });
-
-        handleCloseModals();
-    } catch (err) {
-        alert(err.message || 'An error occurred while updating the UI.');
-    }
+  if (readOnlyMode) return; // Block in read-only
+  if (!selectedFile) return;
+  try {
+    const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to delete file from server');
+    setFiles(prevFiles => {
+      const newFiles = prevFiles.map(fileGroup => {
+        const isTargetGroup = fileGroup.versions.some(v => v.id === selectedFile.id);
+        if (isTargetGroup) {
+          const updatedVersions = fileGroup.versions.filter(v => v.id !== selectedFile.id);
+          if (updatedVersions.length === 0) {
+            return null; 
+          }
+          return { ...fileGroup, versions: updatedVersions };
+        }
+        return fileGroup;
+      });
+      return newFiles.filter(Boolean);
+    });
+    handleCloseModals();
+  } catch (err) {
+    alert(err.message || 'An error occurred while updating the UI.');
+  }
 };
 
 
@@ -422,7 +420,8 @@ const handleChangePassword = async () => {
   // --- NEW STATE & REF START ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
-const navigate = useNavigate(); // Initialize navigate
+  const navigate = useNavigate(); // Initialize navigate
+  const location = useLocation();
 
   // --- ADD THIS SECTION ---
   const handleIdle = useCallback(() => {
@@ -602,6 +601,20 @@ if (Array.isArray(data)) {
     // eslint-disable-next-line
   }, [token]);
 
+  // Detect if admin came from CEO Portal > Projects (via ?project=...)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const projectParam = params.get('project');
+    if (projectParam) {
+      setAdminFilterMode('project');
+      setAdminProjectFilter(projectParam);
+      setAdminOwnerFilter('');
+    } else {
+      setAdminFilterMode('owner');
+      setAdminProjectFilter('');
+    }
+  }, [location.search]);
+
   // Initialize auth from localStorage on first load so refresh keeps session
   useEffect(() => {
     try {
@@ -678,35 +691,48 @@ if (Array.isArray(data)) {
   }, []);
 
  const filteredFiles = React.useMemo(() => {
-    // Step 1: Apply the initial category and date filters as before
-    const preFiltered = files.filter(f => {
-        const hasFilter = filterCategory || filterDateFrom || filterDateTo;
-        if (!hasFilter) return false;
+    const isAdmin = userRole === 'admin';
 
-        if (filterCategory && f.category !== filterCategory) return false;
+    // Start from all files
+    let filteredFiles = files;
 
-        if (filterDateFrom || filterDateTo) {
-            const fileDate = new Date(f.uploadedAt);
-            if (filterDateFrom) {
-                const fromDate = new Date(filterDateFrom);
-                if (fileDate < fromDate) return false;
-            }
-            if (filterDateTo) {
-                const toDate = new Date(filterDateTo);
-                toDate.setHours(23, 59, 59, 999);
-                if (fileDate > toDate) return false;
-            }
+    // Admin-only filters: by owner or by project (category)
+    if (isAdmin) {
+      if (adminFilterMode === 'owner' && adminOwnerFilter) {
+        filteredFiles = filteredFiles.filter(f => f.ownerUserId === adminOwnerFilter);
+      }
+      if (adminFilterMode === 'project' && adminProjectFilter) {
+        filteredFiles = filteredFiles.filter(f => f.category === adminProjectFilter);
+      }
+    }
+
+    // Common filters: category + dates
+    filteredFiles = filteredFiles.filter(f => {
+      const hasFilter = filterCategory || filterDateFrom || filterDateTo;
+      if (!isAdmin && !hasFilter) return false;
+      if (filterCategory && f.category !== filterCategory) return false;
+      if (filterDateFrom || filterDateTo) {
+        const fileDate = new Date(f.uploadedAt);
+        if (filterDateFrom) {
+          const fromDate = new Date(filterDateFrom);
+          if (fileDate < fromDate) return false;
         }
-        return true;
+        if (filterDateTo) {
+          const toDate = new Date(filterDateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (fileDate > toDate) return false;
+        }
+      }
+      return true;
     });
 
     // Step 2: If the search query is empty, return the results from Step 1
     if (!searchQuery.trim()) {
-        return preFiltered;
+        return filteredFiles;
     }
 
     // Step 3: Apply fuzzy search on the pre-filtered results
-    const fuse = new Fuse(preFiltered, {
+    const fuse = new Fuse(filteredFiles, {
         keys: ['name'],       // The property you want to search
         threshold: 0.4,       // Adjusts the "fuzziness" (0.0 = exact match, 1.0 = match anything)
         includeScore: true,
@@ -717,9 +743,14 @@ if (Array.isArray(data)) {
     // Map the results from Fuse.js back to the original file format
     return results.map(result => result.item);
 
-}, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery]);
+}, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery, adminOwnerFilter, adminFilterMode, adminProjectFilter, userRole]);
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
+  // Get unique owners from files for admin owner filter
+  const uniqueOwners = React.useMemo(() => {
+    const owners = Array.from(new Set(files.map(f => f.ownerUserId).filter(Boolean)));
+    return owners.map(o => ({ userId: o, display: o }));
+  }, [files]);
   
   // Team-specific categories for upload dropdown
   const allCategories = React.useMemo(() => getTeamCategories(department), [department]);
@@ -757,123 +788,96 @@ if (Array.isArray(data)) {
 // This is the final, merged version of the function
 
 const handleUpload = async (e) => {
-    e.preventDefault();
-    if (!validateUpload()) return;
-
-    // Create AbortController for cancellation
-    uploadAbortControllerRef.current = new AbortController();
-
-    setIsUploading(true);
-    setUploadProgress(0);
-    setError('');
-
-    try {
-        const totalFiles = filesToUpload.length;
-        const loadedArray = new Array(totalFiles).fill(0);
-        const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
-
-        // Start progress interval for smoother updates
-        progressIntervalRef.current = setInterval(() => {
-            const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
-            const totalProgress = Math.min((totalLoaded / totalSize) * 100, 99); // Cap at 99% until complete
-            setUploadProgress(Math.round(totalProgress));
-        }, 100); // Update every 100ms
-
-        const uploadSingle = (file, index) => {
-            return new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                const formData = new FormData();
-
-                formData.append('file', file);
-                formData.append('compress', compress);
-
-                // Determine the final category
-                const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
-                if (!finalCategory) {
-                    reject(new Error("Category is missing. Please select or type a category."));
-                    return;
-                }
-                formData.append('category', finalCategory);
-                formData.append('fileCreatedAt', fileCreatedAt);
-
-                xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
-                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
-                // Track upload progress
-                xhr.upload.addEventListener('progress', (event) => {
-                    if (event.lengthComputable) {
-                        loadedArray[index] = event.loaded;
-                    }
-                });
-
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        loadedArray[index] = file.size;
-                        resolve();
-                    } else {
-                        reject(new Error(`Upload failed for ${file.name}`));
-                    }
-                });
-
-                xhr.addEventListener('error', () => {
-                    reject(new Error(`Upload failed for ${file.name}`));
-                });
-
-                xhr.addEventListener('abort', () => {
-                    reject(new Error('Upload was cancelled.'));
-                });
-
-                // Handle cancellation
-                uploadAbortControllerRef.current.signal.addEventListener('abort', () => {
-                    xhr.abort();
-                });
-
-                xhr.send(formData);
-            });
-        };
-
-        // Upload sequentially to avoid metadata race conditions on the server
-        for (let i = 0; i < totalFiles; i++) {
-            // If user cancelled, stop early
-            if (uploadAbortControllerRef.current?.signal.aborted) {
-                throw new Error('Upload was cancelled.');
-            }
-            await uploadSingle(filesToUpload[i], i);
+  e.preventDefault();
+  if (readOnlyMode) return; // Block in read-only
+  if (!validateUpload()) return;
+  uploadAbortControllerRef.current = new AbortController();
+  setIsUploading(true);
+  setUploadProgress(0);
+  setError('');
+  try {
+    const totalFiles = filesToUpload.length;
+    const loadedArray = new Array(totalFiles).fill(0);
+    const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
+    progressIntervalRef.current = setInterval(() => {
+      const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
+      const totalProgress = Math.min((totalLoaded / totalSize) * 100, 99);
+      setUploadProgress(Math.round(totalProgress));
+    }, 100);
+    const uploadSingle = (file, index) => {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('compress', compress);
+        const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
+        if (!finalCategory) {
+          reject(new Error("Category is missing. Please select or type a category."));
+          return;
         }
-
-        // Set progress to 100% on completion
-        setUploadProgress(100);
-
-        // Reset form and refresh data on success
-        setFilesToUpload([]);
-        setCategory('');
-        setCustomCategory('');
-        setCompress('none');
-        const today = new Date().toISOString().split('T')[0];
-        setFileCreatedAt(today);
-        if(document.querySelector('input[type="file"]')) {
-            document.querySelector('input[type="file"]').value = '';
-        }
-        showSuccessMessage();
-        await fetchFiles();
-
-    } catch (err) {
-        if (err.message === 'Upload was cancelled.') {
-            setError('Upload was cancelled.');
-            console.log('Upload was cancelled by the user.');
-        } else {
-            setError(err.message || 'An error occurred during upload.');
-        }
-    } finally {
-        // Clear the progress interval
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-        }
-        setIsUploading(false);
-        setUploadProgress(0);
-        uploadAbortControllerRef.current = null;
+        formData.append('category', finalCategory);
+        formData.append('fileCreatedAt', fileCreatedAt);
+        xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            loadedArray[index] = event.loaded;
+          }
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            loadedArray[index] = file.size;
+            resolve();
+          } else {
+            reject(new Error(`Upload failed for ${file.name}`));
+          }
+        });
+        xhr.addEventListener('error', () => {
+          reject(new Error(`Upload failed for ${file.name}`));
+        });
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Upload was cancelled.'));
+        });
+        uploadAbortControllerRef.current.signal.addEventListener('abort', () => {
+          xhr.abort();
+        });
+        xhr.send(formData);
+      });
+    };
+    for (let i = 0; i < totalFiles; i++) {
+      if (uploadAbortControllerRef.current?.signal.aborted) {
+        throw new Error('Upload was cancelled.');
+      }
+      await uploadSingle(filesToUpload[i], i);
     }
+    setUploadProgress(100);
+    setFilesToUpload([]);
+    setCategory('');
+    setCustomCategory('');
+    setCompress('none');
+    const today = new Date().toISOString().split('T')[0];
+    setFileCreatedAt(today);
+    if(document.querySelector('input[type="file"]')) {
+      document.querySelector('input[type="file"]').value = '';
+    }
+    showSuccessMessage();
+    await fetchFiles();
+  } catch (err) {
+    if (err.message === 'Upload was cancelled.') {
+      setError('Upload was cancelled.');
+      console.log('Upload was cancelled by the user.');
+    } else {
+      setError(err.message || 'An error occurred during upload.');
+    }
+  } finally {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    setIsUploading(false);
+    setUploadProgress(0);
+    uploadAbortControllerRef.current = null;
+  }
 };
 // In FileList.jsx, with your other style objects
 const cancelBtnStyle = {
@@ -997,21 +1001,6 @@ const cancelBtnStyle = {
   return (
     <div style={pageStyle}>
       <div style={container}>
-        {/* --- MODIFIED HEADER / WELCOME BANNER START --- */}
-        <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, background: 'linear-gradient(180deg,#eef2ff,#ffffff)' }}>
-          <div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#1f2a37' }}>
-              File Dashboard
-            </div>
-            <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
-              Your secure workspace is ready.
-            </div>
-          </div>
-
-          {/* User Profile Dropdown Menu */}
-
-
-        </div>
         {/* Real-time Dashboard Stats */}
         <div style={statsGrid}>
           <div style={statCard}>
@@ -1048,17 +1037,21 @@ const cancelBtnStyle = {
 </div>
         
         {/* Upload Section */}
-        <div style={{ ...sectionCard, marginBottom: 20 }}>
+        <div style={{ ...sectionCard, marginBottom: 20, opacity: readOnlyMode ? 0.5 : 1, pointerEvents: readOnlyMode ? 'none' : 'auto' }}>
   <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
     Upload a File
     {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
+    {readOnlyMode && <span style={{ ...adminBadge, background: '#64748b', marginLeft: 8 }}>READ-ONLY</span>}
   </h2>
-
+  {readOnlyMode && (
+    <div style={{ color: '#64748b', fontSize: 13, marginTop: 8, marginBottom: 8 }}>
+      Uploading is disabled in read-only mode.
+    </div>
+  )}
   <div style={{ marginTop: 12 }}>
     <div style={uploadGrid}>
       <div>
         <label style={label}>File</label>
-
         <div
           style={{
             border: '2px dashed #d1d5db',
@@ -1067,30 +1060,28 @@ const cancelBtnStyle = {
             textAlign: 'center',
             backgroundColor: '#f9fafb',
             transition: 'all 0.25s ease',
-            cursor: 'pointer',
+            cursor: readOnlyMode ? 'not-allowed' : 'pointer',
             position: 'relative',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3b82f6')}
-          onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#d1d5db')}
         >
           <input
             type="file"
             multiple
-            onChange={(e) => {
+            disabled={readOnlyMode}
+            onChange={readOnlyMode ? undefined : (e => {
               const list = Array.from(e.target.files || []);
               setFilesToUpload(list);
               if (validationErrors.file) {
                 setValidationErrors({ ...validationErrors, file: '' });
               }
-            }}
+            })}
             style={{
               position: 'absolute',
               inset: 0,
               opacity: 0,
-              cursor: 'pointer',
+              cursor: readOnlyMode ? 'not-allowed' : 'pointer',
             }}
           />
-
           <div style={{ color: '#2563eb', fontWeight: 600, fontSize: 13 }}>
             Click to upload or drag files
           </div>
@@ -1098,7 +1089,6 @@ const cancelBtnStyle = {
             PDF, JPG, PNG, DOCX, XLSX, PPTX etc.
           </div>
         </div>
-
         {/* File list preview */}
         {filesToUpload?.length > 0 && (
           <ul
@@ -1135,12 +1125,13 @@ const cancelBtnStyle = {
                   {(file.size / 1024).toFixed(1)} KB
                 </span>
                 <button
-                  onClick={() => removeFile(idx)}
+                  onClick={readOnlyMode ? undefined : (() => removeFile(idx))}
+                  disabled={readOnlyMode}
                   style={{
                     background: 'none',
                     border: 'none',
                     color: '#dc2626',
-                    cursor: 'pointer',
+                    cursor: readOnlyMode ? 'not-allowed' : 'pointer',
                     fontSize: 14,
                     fontWeight: 'bold',
                     marginLeft: 8,
@@ -1155,103 +1146,98 @@ const cancelBtnStyle = {
             ))}
           </ul>
         )}
-
         {validationErrors.file && (
           <div style={{ ...errorText, marginTop: 4 }}>
             {validationErrors.file}
           </div>
         )}
       </div>
-    
-
-              <div>
-                <label style={label}>Category</label>
-                <select 
-                  value={category} 
-                  onChange={e => {
-                    setCategory(e.target.value);
-                    if (validationErrors.category) {
-                      setValidationErrors({ ...validationErrors, category: '' });
-                    }
-                  }} 
-                  style={select}
-                >
-                  <option value="" disabled hidden>Select Category</option>
-                  {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
-                  <option value="OtherText">Other (type below)</option>
-                </select>
-                {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
-                {category === 'OtherText' && (
-                  <div>
-                    <input 
-                      type="text" 
-                      placeholder="Custom category" 
-                      value={customCategory} 
-                      onChange={e => {
-                        setCustomCategory(e.target.value);
-                        if (validationErrors.customCategory) {
-                          setValidationErrors({ ...validationErrors, customCategory: '' });
-                        }
-                      }} 
-                      style={{ ...input, marginTop: 8 }} 
-                    />
-                    {validationErrors.customCategory && <div style={errorText}>{validationErrors.customCategory}</div>}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label style={label}>Compression</label>
-                <select value={compress} onChange={e => setCompress(e.target.value)} style={select}>
-                  <option value="none">No Compression</option>
-                  <option value="zip">Zip</option>
-                  <option value="brotli">Brotli</option>
-                </select>
-              </div>
-              <div>
-                <label style={label}>File Creation Date</label>
-                <input 
-                  type="date" 
-                  value={fileCreatedAt} 
-                  onChange={e => setFileCreatedAt(e.target.value)} 
-                  style={input} 
-                />
-              </div>
-              <div>
-<button 
-    onClick={handleUpload} 
-    
-    // ✅ CHANGED: Add the new condition here
-    disabled={isUploading || filesToUpload.length === 0 || stats.storageUsedMB >= STORAGE_QUOTA_MB} 
-    
-    style={smallBtn}
->
-                  {isUploading ? 'Uploading...' : (filesToUpload.length > 1 ? `Upload ${filesToUpload.length} files` : 'Upload')}
-                </button>
-              </div>
-            </div>
-            
-            {/* Progress Bar */}
-{/* --- REFINED PROGRESS BAR SECTION --- */}
-{isUploading && (
-  <div style={{ marginTop: 16 }}>
-    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-      <span style={{ fontSize: 13, color: '#475569', fontWeight: 500, flexGrow: 1 }}>
-        Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...
-      </span>
-      <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
-        {uploadProgress}%
-      </span>
-      <button onClick={handleCancelUpload} style={cancelBtnStyle}>
-        Cancel
-      </button>
-    </div>
-    <div style={progressContainer}>
-      <div style={{ ...progressBar, width: `${uploadProgress}%` }} />
-    </div>
-  </div>
-)}
+      <div>
+        <label style={label}>Category</label>
+        <select 
+          value={category} 
+          onChange={readOnlyMode ? undefined : (e => {
+            setCategory(e.target.value);
+            if (validationErrors.category) {
+              setValidationErrors({ ...validationErrors, category: '' });
+            }
+          })} 
+          style={select}
+          disabled={readOnlyMode}
+        >
+          <option value="" disabled hidden>Select Category</option>
+          {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+          <option value="OtherText">Other (type below)</option>
+        </select>
+        {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
+        {category === 'OtherText' && (
+          <div>
+            <input 
+              type="text" 
+              placeholder="Custom category" 
+              value={customCategory} 
+              onChange={readOnlyMode ? undefined : (e => {
+                setCustomCategory(e.target.value);
+                if (validationErrors.customCategory) {
+                  setValidationErrors({ ...validationErrors, customCategory: '' });
+                }
+              })} 
+              style={{ ...input, marginTop: 8 }} 
+              disabled={readOnlyMode}
+            />
+            {validationErrors.customCategory && <div style={errorText}>{validationErrors.customCategory}</div>}
           </div>
+        )}
+      </div>
+      <div>
+        <label style={label}>Compression</label>
+        <select value={compress} onChange={readOnlyMode ? undefined : (e => setCompress(e.target.value))} style={select} disabled={readOnlyMode}>
+          <option value="none">No Compression</option>
+          <option value="zip">Zip</option>
+          <option value="brotli">Brotli</option>
+        </select>
+      </div>
+      <div>
+        <label style={label}>File Creation Date</label>
+        <input 
+          type="date" 
+          value={fileCreatedAt} 
+          onChange={readOnlyMode ? undefined : (e => setFileCreatedAt(e.target.value))} 
+          style={input} 
+          disabled={readOnlyMode}
+        />
+      </div>
+      <div>
+        <button 
+          onClick={readOnlyMode ? undefined : handleUpload} 
+          disabled={readOnlyMode || isUploading || filesToUpload.length === 0 || stats.storageUsedMB >= STORAGE_QUOTA_MB} 
+          style={smallBtn}
+        >
+          {isUploading ? 'Uploading...' : (filesToUpload.length > 1 ? `Upload ${filesToUpload.length} files` : 'Upload')}
+        </button>
+      </div>
+    </div>
+    {/* Progress Bar */}
+    {isUploading && !readOnlyMode && (
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 500, flexGrow: 1 }}>
+            Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...
+          </span>
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+            {uploadProgress}%
+          </span>
+          <button onClick={handleCancelUpload} style={cancelBtnStyle}>
+            Cancel
+          </button>
         </div>
+        <div style={progressContainer}>
+          <div style={{ ...progressBar, width: `${uploadProgress}%` }} />
+        </div>
+      </div>
+    )}
+  </div>
+</div>
 
         {/* Filter Section */}
         <div style={{ ...sectionCard, marginBottom: 20 }}>
@@ -1262,6 +1248,31 @@ const cancelBtnStyle = {
 
   
           <div style={{ marginTop: 12 }}>
+            {/* Admin filters: by Owner (Teams path) or by Project (Projects path) */}
+            {userRole === 'admin' && adminFilterMode === 'owner' && (
+              <div style={{ marginBottom: 12 }}>
+                <AdminUserFilter
+                  users={uniqueOwners}
+                  selectedUser={adminOwnerFilter}
+                  onChange={setAdminOwnerFilter}
+                />
+              </div>
+            )}
+            {userRole === 'admin' && adminFilterMode === 'project' && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={label}>Filter by Project</label>
+                <select
+                  value={adminProjectFilter}
+                  onChange={e => setAdminProjectFilter(e.target.value)}
+                  style={select}
+                >
+                  <option value="">All Projects</option>
+                  {ADMIN_PROJECTS.map(project => (
+                    <option key={project} value={project}>{project}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <div>
                 <label style={label}>Category</label>
@@ -1440,22 +1451,27 @@ const cancelBtnStyle = {
                 <td style={tdStyle}>{displayedVersion.modifiedAt ? new Date(displayedVersion.modifiedAt).toLocaleDateString('en-GB') : '-'}</td>
                 <td style={tdStyle}>{displayedVersion.fileCreatedAt ? new Date(displayedVersion.fileCreatedAt).toLocaleDateString('en-GB') : '-'}</td>
                 <td style={tdStyle}>
-                    <div className="actions-container" ref={openActionMenuId === fileGroup.id ? actionMenuRef : null}>
-                        <button className="actions-trigger" onClick={() => setOpenActionMenuId(openActionMenuId === fileGroup.id ? null : fileGroup.id)}>...</button>
-                        {openActionMenuId === fileGroup.id && (
-                            <div className="actions-dropdown">
-                                <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>Download</button>
-                                {fileGroup.isOwner && (
-                                    fileGroup.isShared ? 
-                                        <button className="actions-item" onClick={() => handleUnshareFile(displayedVersion.id)}>Unshare</button>
-                                        : 
-                                        <button className="actions-item" onClick={() => handleShareFile(displayedVersion.id)}>Share with Team</button>
-                                )}
-                                <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>
-                                <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>
-                            </div>
+                  <div className="actions-container" ref={openActionMenuId === fileGroup.id ? actionMenuRef : null}>
+                    <button className="actions-trigger" 
+                      onClick={readOnlyMode ? undefined : (() => setOpenActionMenuId(openActionMenuId === fileGroup.id ? null : fileGroup.id))}
+                      disabled={readOnlyMode}
+                      style={readOnlyMode ? { cursor: 'not-allowed', opacity: 0.6 } : {}}>
+                      ...
+                    </button>
+                    {openActionMenuId === fileGroup.id && (
+                      <div className="actions-dropdown">
+                        <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>Download</button>
+                        {!readOnlyMode && fileGroup.isOwner && (
+                          fileGroup.isShared ? 
+                            <button className="actions-item" onClick={() => handleUnshareFile(displayedVersion.id)}>Unshare</button>
+                            : 
+                            <button className="actions-item" onClick={() => handleShareFile(displayedVersion.id)}>Share with Team</button>
                         )}
-                    </div>
+                        {!readOnlyMode && <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>}
+                        {!readOnlyMode && <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>}
+                      </div>
+                    )}
+                  </div>
                 </td>
             </tr>
         );
@@ -1467,78 +1483,73 @@ const cancelBtnStyle = {
       {/* ✅ NEW MODALS (place them at the end of the main div) */}
             
   {/* ✅ UPDATED EDIT MODAL */}
-            {isEditModalOpen && (
-                <div className="modal-overlay" onClick={handleCloseModals}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3 className="modal-title">Edit File</h3>
-                        </div>
-                        {/* The form now uses the correct encoding type for file uploads */}
-                        <form onSubmit={handleUpdateFile} encType="multipart/form-data" className="modal-body">
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={label}>File Name (without extension)</label>
-                                <input name="name" value={editFormData.name} onChange={handleEditFormChange} style={input} required />
-                            </div>
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={label}>Category</label>
-                                <select name="category" value={editFormData.category} onChange={handleEditFormChange} style={select}>
-                                    {allCategories.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                </select>
-                            </div>
-
-                            {/* Conditional input for "Others" category */}
-                            {editFormData.category === 'Others' && (
-                                <div style={{ marginBottom: '16px' }}>
-                                    <label style={label}>Custom Category Name</label>
-                                    <input name="customCategory" value={editFormData.customCategory} onChange={handleEditFormChange} style={input} required />
-                                </div>
-                            )}
-
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={label}>File Creation Date</label>
-                                <input 
-                                    type="date" 
-                                    name="fileCreatedAt" 
-                                    value={editFormData.fileCreatedAt} 
-                                    onChange={handleEditFormChange} 
-                                    style={input} 
-                                />
-                            </div>
-
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={label}>Replace File (Optional)</label>
-                                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>Upload a new file to create a new version.</p>
-                                <input type="file" name="newFile" onChange={handleEditFormChange} style={input} />
-                            </div>
-                            
-                            <div className="modal-footer">
-                                <button type="button" className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
-                                <button type="submit" className="modal-button primary">Save Changes</button>
-                            </div>
-                        </form>
+            {isEditModalOpen && !readOnlyMode && (
+              <div className="modal-overlay" onClick={handleCloseModals}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3 className="modal-title">Edit File</h3>
+                  </div>
+                  <form onSubmit={handleUpdateFile} encType="multipart/form-data" className="modal-body">
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={label}>File Name (without extension)</label>
+                      <input name="name" value={editFormData.name} onChange={handleEditFormChange} style={input} required disabled={readOnlyMode} />
                     </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={label}>Category</label>
+                      <select name="category" value={editFormData.category} onChange={handleEditFormChange} style={select} disabled={readOnlyMode}>
+                        {allCategories.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                    {editFormData.category === 'Others' && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={label}>Custom Category Name</label>
+                        <input name="customCategory" value={editFormData.customCategory} onChange={handleEditFormChange} style={input} required disabled={readOnlyMode} />
+                      </div>
+                    )}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={label}>File Creation Date</label>
+                      <input 
+                        type="date" 
+                        name="fileCreatedAt" 
+                        value={editFormData.fileCreatedAt} 
+                        onChange={handleEditFormChange} 
+                        style={input} 
+                        disabled={readOnlyMode}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={label}>Replace File (Optional)</label>
+                      <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>Upload a new file to create a new version.</p>
+                      <input type="file" name="newFile" onChange={handleEditFormChange} style={input} disabled={readOnlyMode} />
+                    </div>
+                    <div className="modal-footer">
+                      <button type="button" className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
+                      <button type="submit" className="modal-button primary" disabled={readOnlyMode}>Save Changes</button>
+                    </div>
+                  </form>
                 </div>
+              </div>
             )}
 
             {/* DELETE CONFIRMATION MODAL */}
-            {isDeleteModalOpen && (
-                <div className="modal-overlay" onClick={handleCloseModals}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3 className="modal-title">Confirm Deletion</h3>
-                        </div>
-                        <div className="modal-body">
-                            <p>
-                                Are you sure you want to permanently delete the file <span className="highlight">"{selectedFile?.name}.{selectedFile?.fileType}"</span>?
-                            </p>
-                            <p style={{ fontSize: '13px', color: '#dc2626' }}>This action cannot be undone.</p>
-                        </div>
-                        <div className="modal-footer">
-                            <button className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
-                            <button className="modal-button delete" onClick={handleDeleteFile}>Delete</button>
-                        </div>
-                    </div>
+            {isDeleteModalOpen && !readOnlyMode && (
+              <div className="modal-overlay" onClick={handleCloseModals}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3 className="modal-title">Confirm Deletion</h3>
+                  </div>
+                  <div className="modal-body">
+                    <p>
+                      Are you sure you want to permanently delete the file <span className="highlight">"{selectedFile?.name}.{selectedFile?.fileType}"</span>?
+                    </p>
+                    <p style={{ fontSize: '13px', color: '#dc2626' }}>This action cannot be undone.</p>
+                  </div>
+                  <div className="modal-footer">
+                    <button className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
+                    <button className="modal-button delete" onClick={handleDeleteFile} disabled={readOnlyMode}>Delete</button>
+                  </div>
                 </div>
+              </div>
             )}
       {/* Success Notification */}
       {showSuccessNotification && (

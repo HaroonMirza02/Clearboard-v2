@@ -148,8 +148,9 @@ function Navbar() {
                     </div>
                 ) : (
                     <>
-                        <button className="cb-nav-signin" onClick={() => navigate('/department')}>Login</button>
-                        <Link to="/department" className="cb-nav-cta">Sign Up</Link>
+                        <button className="cb-nav-signin" onClick={() => navigate('/admin-login')} style={{ marginRight: '10px' }}>CEO Portal</button>
+                        <button className="cb-nav-signin" onClick={() => navigate('/login')}>Login</button>
+                        <Link to="/signup" className="cb-nav-cta">Sign Up</Link>
                     </>
                 )}
             </div>

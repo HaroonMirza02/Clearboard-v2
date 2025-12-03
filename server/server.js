@@ -4,15 +4,26 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const morgan = require('morgan');
-const multer = require('multer');
 const zlib = require('zlib');
 const archiver = require('archiver');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
-const { uploadToGCS, getGCSDownloadStream, getSignedUrl, getFileMetadata, deleteFromGCS } = require('./services/gcs');
+const Busboy = require('busboy');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const pump = promisify(pipeline);
+const { 
+  uploadToGCS, 
+  getGCSDownloadStream, 
+  getSignedUrl, 
+  getFileMetadata, 
+  deleteFromGCS,
+  createGCSWriteStream
+} = require('./services/gcs');
 
 const app = express();
+app.disable('x-powered-by');
 
 // Enable CORS for frontend origins
 const ALLOWED_ORIGINS = [
@@ -27,9 +38,25 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:4173"
 ];
 
+// Always set CORS headers early so even failures include them
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  const reqHeaders = req.headers['access-control-request-headers'];
+  res.setHeader('Access-Control-Allow-Headers', reqHeaders || 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// Keep cors package too (no harm) in case of future dynamic needs
 const corsOptions = {
   origin: function(origin, callback) {
-    // Allow non-browser requests or same-origin with no Origin header
     if (!origin) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
@@ -38,19 +65,19 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 200
 };
-
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json());
+
+app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
-// Ensure uploads directory exists (for temporary files only)
+// Ensure uploads directory exists (for any residual temp needs)
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-const upload = multer({ dest: UPLOADS_DIR });
+// Note: We no longer use multer for uploads; we stream with Busboy.
 
 // Hardcoded users (legacy)
 const HARDCODED_USERS = [
@@ -565,6 +592,8 @@ app.post('/api/login', async (req, res) => {
   try {
     const { userId, password, department } = req.body;
 
+    console.log(`[LOGIN] Request received - userId: ${userId}, department: ${department}`);
+
     if (!userId || !password) {
       return res.status(400).json({ message: 'User ID and password are required' });
     }
@@ -576,38 +605,61 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    console.log(`[LOGIN] Password check - checking if user is in HARDCODED_USERS`);
+    const isHardcodedUser = HARDCODED_USERS.some(u => u.userId === userId);
+    console.log(`[LOGIN] isHardcodedUser: ${isHardcodedUser}`);
+
     // Check password
     let isValidPassword = false;
     
-    // For hardcoded users (plain text passwords)
-    if (HARDCODED_USERS.some(u => u.userId === userId)) {
+    if (isHardcodedUser) {
+      console.log(`[LOGIN] User is hardcoded - comparing plain text passwords`);
+      console.log(`[LOGIN] Provided password: "${password}"`);
+      console.log(`[LOGIN] Stored password: "${user.password}"`);
       isValidPassword = user.password === password;
+      console.log(`[LOGIN] Plain text comparison result: ${isValidPassword}`);
     } else {
-      // For registered users (hashed passwords)
+      console.log(`[LOGIN] User is registered - comparing hashed passwords with bcrypt`);
       isValidPassword = await bcrypt.compare(password, user.password);
+      console.log(`[LOGIN] Bcrypt comparison result: ${isValidPassword}`);
     }
 
     if (!isValidPassword) {
+      console.log(`[LOGIN] Password validation failed for user: ${userId}`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    console.log(`[LOGIN] Password validation passed for user: ${userId}`);
 
     // Department-based RBAC
     const expectedDept = (user.department || '').toLowerCase();
     const requestDept = (department || '').toLowerCase();
 
+    console.log(`[LOGIN RBAC] expectedDept: "${expectedDept}", requestDept: "${requestDept}"`);
+
     if (user.role === 'admin') {
-      // Admin must login only via Admin department
-      if (requestDept !== 'admin') {
-        return res.status(403).json({ message: 'Admin must login via Admin department' });
+      console.log(`[LOGIN] User is admin`);
+      // Admin can login with or without specifying department
+      // If they DO specify department, it must be 'admin'
+      if (requestDept && requestDept !== 'admin') {
+        console.log(`[LOGIN] REJECTED - Admin tried to login with department: ${requestDept}`);
+        return res.status(403).json({ message: 'Admin users must login via Admin department or without department' });
       }
+      // Admin login is allowed whether or not they specify department
+      console.log(`[LOGIN] APPROVED - Admin user ${userId} allowed to login`);
     } else {
-      // Non-admin cannot login via Admin and must match their own department
+      console.log(`[LOGIN] User is not admin (role: ${user.role})`);
+      // Non-admin cannot specify 'admin' department
       if (requestDept === 'admin') {
+        console.log(`[LOGIN] REJECTED - Non-admin tried to login with admin department`);
         return res.status(403).json({ message: 'Access denied for Admin department' });
       }
-      if (expectedDept && requestDept && expectedDept !== requestDept) {
+      // For non-admins, if they specify a department, it must match their user's department
+      if (requestDept && expectedDept && requestDept !== expectedDept) {
+        console.log(`[LOGIN] REJECTED - Department mismatch: requested ${requestDept}, expected ${expectedDept}`);
         return res.status(403).json({ message: 'Department mismatch' });
       }
+      console.log(`[LOGIN] APPROVED - Non-admin user ${userId} allowed to login`);
     }
 
     const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '15m' });
@@ -638,177 +690,159 @@ function auth(req, res, next) {
   }
 }
 
-// Upload endpoint (with optional compression)
-app.post('/api/files/upload', auth, upload.single('file'), async (req, res) => {
-  let tempPath = null;
-  let processedPath = null;
-  
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
-    
-    const { originalname, mimetype, path: filePath } = req.file;
-    tempPath = filePath;
-    const { compress = 'none', category = 'Others', fileCreatedAt } = req.body;
-    
-    console.log(`Upload request: ${originalname}, compress: ${compress}, category: ${category}, user: ${req.user.userId}`);
-    // ✅ NEW: Get the base name without the extension
-    const baseName = path.parse(originalname).name;
-    const meta = await loadMeta();
+// Upload endpoint (streaming, with optional compression)
+app.post('/api/files/upload', auth, async (req, res) => {
+  const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 2 * 1024 * 1024 * 1024); // 2GB default
 
-    // File owner is the current user
+  let uploadId = null;
+  try {
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_UPLOAD_BYTES } });
+
+    let originalname = null;
+    let mimetype = null;
+    let category = 'Others';
+    let compress = 'none';
+    let fileCreatedAtField = null;
+
+    // We will create these once file event fires
+    let gcsObjectKey = null;
+    let compressionType = 'none';
+    let finalMime = null;
+    let size = 0;
+    let baseName = null;
+
+    // Defer reading metadata until after the upload stream finishes to avoid blocking body read
     const ownerId = req.user.id;
     const ownerUserId = req.user.userId;
 
-    // ✅ CHANGED: Find versions using baseName instead of originalname
-    const sameGroup = Object.values(meta).filter(f => 
-      f.baseName === baseName && 
-      (f.category || 'Others') === category &&
-      f.ownerId === ownerId
-    );
-    
     const nowIso = new Date().toISOString();
-    const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
-    const firstUploadedAt = sameGroup.length
-      ? sameGroup.reduce((earliest, f) => {
-          const ts = f.uploadedAt || nowIso;
-          return ts < earliest ? ts : earliest;
-        }, sameGroup[0].uploadedAt || nowIso)
-      : nowIso;
-    
-    // Handle fileCreatedAt - use provided date or current date for first version
-    const fileCreatedAtDate = sameGroup.length > 0 
-      ? sameGroup[0].fileCreatedAt // Keep existing fileCreatedAt for subsequent versions
-      : (fileCreatedAt ? new Date(fileCreatedAt).toISOString() : nowIso);
 
-    const version = maxVersion + 1;
-    const uploadedAt = firstUploadedAt;
-    const modifiedAt = version > 1 ? nowIso : null;
-
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    let gcsObjectKey = `files/${id}`;
-    let compressionType = 'none';
-    let finalMime = mimetype;
-    let size = 0;
-
-    console.log(`Processing file ID: ${id}, version: ${version}`);
-
-    // Handle compression and upload to GCS
-    if (compress === 'zip') {
-      const zipPath = tempPath + '.zip';
-      processedPath = zipPath;
-      
-      await new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip');
-        output.on('close', resolve);
-        archive.on('error', reject);
-        archive.pipe(output);
-        archive.file(tempPath, { name: originalname });
-        archive.finalize();
-      });
-      
-      gcsObjectKey += '.zip';
-      const fileBuffer = fs.readFileSync(zipPath);
-      await uploadToGCS(gcsObjectKey, fileBuffer, 'application/zip');
+    const finishUpload = async () => {
+      if (!uploadId) return; // If file never arrived
       const metadata = await getFileMetadata(gcsObjectKey);
       size = metadata.size;
-      compressionType = 'zip';
-      finalMime = 'application/zip';
-      
-    } else if (compress === 'brotli') {
-      const brotliPath = tempPath + '.br';
-      processedPath = brotliPath;
-      
-      await new Promise((resolve, reject) => {
-        const input = fs.createReadStream(tempPath);
-        const output = fs.createWriteStream(brotliPath);
-        input.pipe(zlib.createBrotliCompress()).pipe(output);
-        output.on('finish', resolve);
-        output.on('error', reject);
-      });
-      
-      gcsObjectKey += '.br';
-      const fileBuffer = fs.readFileSync(brotliPath);
-      await uploadToGCS(gcsObjectKey, fileBuffer, 'application/x-brotli');
-      const metadata = await getFileMetadata(gcsObjectKey);
-      size = metadata.size;
-      compressionType = 'brotli';
-      finalMime = 'application/x-brotli';
-      
-    } else {
-      gcsObjectKey += path.extname(originalname);
-      const fileBuffer = fs.readFileSync(tempPath);
-      await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
-      const metadata = await getFileMetadata(gcsObjectKey);
-      size = metadata.size;
-    }
 
-    console.log(`File uploaded to GCS: ${gcsObjectKey}, size: ${size}`);
+      // Load meta now (post-upload) and determine firstUploadedAt and version
+      const meta = await loadMeta();
+      const sameGroup = Object.values(meta).filter(f =>
+        f.baseName === baseName &&
+        (f.category || 'Others') === category &&
+        f.ownerId === ownerId
+      );
+      const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
+      const firstUploadedAt = sameGroup.length
+        ? sameGroup.reduce((earliest, f) => {
+            const ts = f.uploadedAt || nowIso;
+            return ts < earliest ? ts : earliest;
+          }, sameGroup[0].uploadedAt || nowIso)
+        : nowIso;
 
-    meta[id] = {
-      id,
-      originalname,
-      baseName,
-      mimetype,
-      gcsObjectKey,
-      storageProvider: 'gcs',
-      compressionType,
-      finalMime,
-      category,
-      version,
-      uploadedAt,
-      modifiedAt,
-      fileCreatedAt: fileCreatedAtDate,
-      size,
-      ownerId,
-      ownerUserId
+      const version = maxVersion + 1;
+      const uploadedAt = firstUploadedAt;
+      const modifiedAt = version > 1 ? nowIso : null;
+      const fileCreatedAtDate = sameGroup.length > 0
+        ? sameGroup[0].fileCreatedAt
+        : (fileCreatedAtField ? new Date(fileCreatedAtField).toISOString() : nowIso);
+
+      meta[uploadId] = {
+        id: uploadId,
+        originalname,
+        baseName,
+        mimetype,
+        gcsObjectKey,
+        storageProvider: 'gcs',
+        compressionType,
+        finalMime,
+        category,
+        version,
+        uploadedAt,
+        modifiedAt,
+        fileCreatedAt: fileCreatedAtDate,
+        size,
+        ownerId,
+        ownerUserId
+      };
+
+      await saveMeta(meta);
+      res.json({ message: 'Upload complete', fileId: uploadId, version, category, size });
     };
-    
-    await saveMeta(meta);
-    console.log(`Metadata saved for file: ${id}`);
 
-    // Clean up temporary files
-    try {
-      if (tempPath && fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-        console.log(`Cleaned up temp file: ${tempPath}`);
-      }
-      if (processedPath && fs.existsSync(processedPath)) {
-        fs.unlinkSync(processedPath);
-        console.log(`Cleaned up processed file: ${processedPath}`);
-      }
-    } catch (cleanupErr) {
-      console.error('Error cleaning up temp files:', cleanupErr);
-    }
-
-    res.json({ 
-      message: 'Upload complete', 
-      fileId: id,
-      version,
-      category,
-      size
+    busboy.on('field', (name, val) => {
+      if (name === 'category') category = val || 'Others';
+      if (name === 'compress') compress = val || 'none';
+      if (name === 'fileCreatedAt') fileCreatedAtField = val;
     });
-    
+
+    busboy.on('file', async (name, file, info) => {
+      try {
+        originalname = info.filename;
+        mimetype = info.mimeType;
+        finalMime = mimetype;
+        baseName = path.parse(originalname).name;
+        uploadId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        gcsObjectKey = `files/${uploadId}`;
+
+        if (compress === 'zip') {
+          gcsObjectKey += '.zip';
+          compressionType = 'zip';
+          finalMime = 'application/zip';
+
+          const zip = archiver('zip');
+          zip.on('error', err => { file.destroy(err); });
+
+          // Wire pipeline before finalizing so no zip data is lost
+          const write = createGCSWriteStream(gcsObjectKey, finalMime, { resumable: true });
+          const pumping = pump(zip, write);
+
+          // Append the uploaded stream into the archive under its original name
+          zip.append(file, { name: originalname });
+          // Finalize the archive; pipeline will resolve when write finishes
+          zip.finalize();
+
+          await pumping;
+
+        } else if (compress === 'brotli') {
+          gcsObjectKey += '.br';
+          compressionType = 'brotli';
+          finalMime = 'application/x-brotli';
+
+          const br = zlib.createBrotliCompress();
+          const write = createGCSWriteStream(gcsObjectKey, finalMime, { resumable: true });
+          write.on('error', err => file.destroy(err));
+          await pump(file, br, write);
+
+        } else {
+          gcsObjectKey += path.extname(originalname);
+          const write = createGCSWriteStream(gcsObjectKey, mimetype, { resumable: true });
+          write.on('error', err => file.destroy(err));
+          await pump(file, write);
+        }
+      } catch (e) {
+        busboy.emit('error', e);
+      }
+    });
+
+    busboy.on('error', (err) => {
+      console.error('Busboy error:', err);
+      if (!res.headersSent) res.status(500).json({ message: 'Upload failed', error: err.message });
+    });
+
+    busboy.on('finish', async () => {
+      try {
+        if (!uploadId) {
+          return res.status(400).json({ message: 'No file uploaded' });
+        }
+        await finishUpload();
+      } catch (err) {
+        console.error('Upload finalize error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Upload failed', error: err.message });
+      }
+    });
+
+    req.pipe(busboy);
   } catch (err) {
-    console.error('Upload error:', err);
-    
-    try {
-      if (tempPath && fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-      if (processedPath && fs.existsSync(processedPath)) {
-        fs.unlinkSync(processedPath);
-      }
-    } catch (cleanupErr) {
-      console.error('Error cleaning up after failure:', cleanupErr);
-    }
-    
-    res.status(500).json({ 
-      message: 'Upload failed', 
-      error: err.message 
-    });
+    console.error('Upload error (outer):', err);
+    if (!res.headersSent) res.status(500).json({ message: 'Upload failed', error: err.message });
   }
 });
 
@@ -909,13 +943,10 @@ app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
   }
 });
 
-// ✅ REPLACE your old edit endpoint with this new one
-app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, res) => {
+// ✅ REPLACE your old edit endpoint with this streaming version
+app.post('/api/files/edit/:fileId', auth, async (req, res) => {
   try {
-        console.log('Backend received req.body:', req.body);
-
     const { fileId } = req.params;
-    const { name, category, fileCreatedAt } = req.body;
     const meta = await loadMeta();
     const originalFile = meta[fileId];
 
@@ -923,66 +954,88 @@ app.post('/api/files/edit/:fileId', auth, upload.single('newFile'), async (req, 
       return res.status(404).json({ message: 'File version not found' });
     }
 
-    // Authorization check
     if (req.user.role !== 'admin' && originalFile.ownerId !== req.user.id) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    
-    // --- SCENARIO 1: A new file was uploaded (creating a new version) ---
-    if (req.file) {
-      console.log(`New version upload for: ${originalFile.originalname}`);
-      // This logic is adapted from your original /upload endpoint
-      const { originalname: newName, mimetype, path: filePath } = req.file;
-      
-      // ✅ CHANGED: Find versions using baseName
-      const sameGroup = Object.values(meta).filter(f => 
-        f.baseName === originalFile.baseName && 
-        f.ownerId === originalFile.ownerId
-      );
-      const maxVersion = Math.max(...sameGroup.map(f => f.version || 1));
-      
-      const newVersionNumber = maxVersion + 1;
-      const newFileId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-      const gcsObjectKey = `files/${newFileId}${path.extname(newName)}`;
 
-      // Upload the new file to GCS
-      const fileBuffer = fs.readFileSync(filePath);
-      await uploadToGCS(gcsObjectKey, fileBuffer, mimetype);
-      fs.unlinkSync(filePath); // Clean up temp file
+    let newName = null;
+    let newCategory = null;
+    let newFileCreatedAt = null;
+    let uploadedNewVersion = false;
+    let newFileId = null;
 
-      const metadata = await getFileMetadata(gcsObjectKey);
-      // ✅ CHANGED: When creating the new metadata entry
-      meta[newFileId] = {
-        ...originalFile,
-        id: newFileId,
-        gcsObjectKey,
-        version: newVersionNumber,
-        modifiedAt: new Date().toISOString(),
-        size: metadata.size,
-        // Update name and category, and ensure new originalname/baseName are set
-        originalname: newName,
-        baseName: path.parse(newName).name, // Use the new file's base name
-        category: category,
-      };
-      
-    // --- SCENARIO 2: Only metadata (name/category) was changed ---
-    } else {
-    // ✅ CHANGED: Also update baseName when only metadata changes
-      const originalExt = path.extname(originalFile.originalname);
-      originalFile.originalname = `${name}${originalExt}`;
-      originalFile.baseName = name; // Update the base name
-      originalFile.category = category;
-      originalFile.modifiedAt = new Date().toISOString();
-      
-      // Update fileCreatedAt if provided
-      if (fileCreatedAt) {
-        originalFile.fileCreatedAt = new Date(fileCreatedAt).toISOString();
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: Number(process.env.MAX_UPLOAD_BYTES || 2 * 1024 * 1024 * 1024) } });
+
+    busboy.on('field', (name, val) => {
+      if (name === 'name') newName = val;
+      if (name === 'category') newCategory = val;
+      if (name === 'fileCreatedAt') newFileCreatedAt = val;
+    });
+
+    busboy.on('file', async (name, file, info) => {
+      try {
+        // Create a new version if a new file was uploaded
+        uploadedNewVersion = true;
+        const sameGroup = Object.values(meta).filter(f =>
+          f.baseName === originalFile.baseName &&
+          f.ownerId === originalFile.ownerId
+        );
+        const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
+        const newVersionNumber = maxVersion + 1;
+
+        newFileId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const ext = path.extname(info.filename);
+        const gcsObjectKey = `files/${newFileId}${ext}`;
+
+        const write = createGCSWriteStream(gcsObjectKey, info.mimeType, { resumable: true });
+        await pump(file, write);
+
+        const metadata = await getFileMetadata(gcsObjectKey);
+        meta[newFileId] = {
+          ...originalFile,
+          id: newFileId,
+          gcsObjectKey,
+          version: newVersionNumber,
+          modifiedAt: new Date().toISOString(),
+          size: metadata.size,
+          originalname: info.filename,
+          baseName: path.parse(info.filename).name,
+          category: newCategory ?? originalFile.category,
+        };
+      } catch (e) {
+        busboy.emit('error', e);
       }
-    }
+    });
 
-    await saveMeta(meta);
-    res.status(200).json({ message: 'File updated successfully' });
+    busboy.on('error', (err) => {
+      console.error('Edit busboy error:', err);
+      if (!res.headersSent) res.status(500).json({ message: 'Failed to edit file', error: err.message });
+    });
 
+    busboy.on('finish', async () => {
+      try {
+        if (!uploadedNewVersion) {
+          // Only metadata change
+          const originalExt = path.extname(originalFile.originalname);
+          if (newName) {
+            originalFile.originalname = `${newName}${originalExt}`;
+            originalFile.baseName = newName;
+          }
+          if (newCategory) originalFile.category = newCategory;
+          originalFile.modifiedAt = new Date().toISOString();
+          if (newFileCreatedAt) {
+            originalFile.fileCreatedAt = new Date(newFileCreatedAt).toISOString();
+          }
+        }
+        await saveMeta(meta);
+        res.status(200).json({ message: 'File updated successfully', fileId: uploadedNewVersion ? newFileId : fileId });
+      } catch (err) {
+        console.error('Edit finalize error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Failed to edit file', error: err.message });
+      }
+    });
+
+    req.pipe(busboy);
   } catch (err) {
     console.error('Edit file error:', err);
     res.status(500).json({ message: 'Failed to edit file', error: err.message });
@@ -1187,6 +1240,23 @@ app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
     console.error('Unshare file error:', err);
     res.status(500).json({ message: 'Failed to unshare file', error: err.message });
   }
+});
+
+// Global error handler — ensure CORS headers are present on errors for allowed origins
+app.use((err, req, res, next) => {
+  try {
+    const origin = req.headers.origin;
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+  } catch {}
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  if (!res.headersSent) res.status(status).json({ message, error: message });
 });
 
 const PORT = process.env.PORT || 8080;

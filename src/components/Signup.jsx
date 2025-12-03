@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
-import { useLocation, Link, useNavigate } from 'react-router';
+import { useState, useRef } from 'react';
+import { Link, useNavigate } from 'react-router';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { API_ENDPOINTS } from '../utils/api';
 import '../styles/auth.css';
@@ -7,6 +7,7 @@ import '../styles/auth.css';
 function Signup() {
   const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
+  const [department, setDepartment] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,11 +19,12 @@ function Signup() {
   const [recaptchaToken, setRecaptchaToken] = useState(null);
 
   const recaptchaRef = useRef(null);
-  const location = useLocation();
   const navigate = useNavigate();
 
-  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const selectedDept = params.get('dept') || '';
+  const departments = [
+    { value: 'Software Development', label: 'Software Development' },
+    { value: 'Business Development', label: 'Business Development' },
+  ];
 
   // If already authenticated, redirect to dashboard
   if (typeof window !== 'undefined' && localStorage.getItem('token')) {
@@ -44,6 +46,7 @@ function Signup() {
     setSuccess('');
 
     if (!email) return setError('Email is required');
+    if (!department) return setError('Please select a department');
     if (password !== confirmPassword) return setError('Passwords do not match');
     const rules = meetsRules(password);
     if (!rules.all) return setError('Password does not meet requirements');
@@ -57,7 +60,7 @@ function Signup() {
           userId,
           password,
           email,
-          department: selectedDept,
+          department,
           verificationToken,
           'g-recaptcha-response': recaptchaToken
         }),
@@ -65,7 +68,7 @@ function Signup() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || 'Signup failed');
       setSuccess('Account created. Redirecting to login...');
-      setTimeout(() => navigate(`/login?dept=${encodeURIComponent(selectedDept)}`), 800);
+      setTimeout(() => navigate('/login'), 800);
 
       // Reset reCAPTCHA after success
       if (recaptchaRef.current) recaptchaRef.current.reset();
@@ -112,8 +115,6 @@ function Signup() {
     }
   };
 
-  const isAdmin = selectedDept.toLowerCase() === 'admin';
-
   const onRecaptchaChange = (token) => {
     setRecaptchaToken(token);
   };
@@ -128,95 +129,97 @@ function Signup() {
     <div className="auth-container">
       <div className="auth-header">
         <h2>Create Account</h2>
-        {selectedDept && (
-          <p>Department: <strong>{selectedDept}</strong></p>
-        )}
       </div>
 
-      {isAdmin ? (
-        <div className="auth-footer" style={{ color: '#ef4444', fontWeight: 600 }}>
-          Signup is disabled for Admin department. Please <Link to="/department">choose another department</Link> or proceed to <Link to="/login?dept=Admin">Admin login</Link>.
-        </div>
-      ) : (
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>User ID</label>
-            <input value={userId} onChange={e => setUserId(e.target.value)} autoFocus required />
-          </div>
-          <div className="form-group">
-            <label>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label>Email Verification OTP</label>
-            <div className="email-verification-group">
-              <input type="text" placeholder="Enter OTP" value={otp} onChange={e => setOtp(e.target.value)} disabled={!otpSent} />
-              <button
-                type="button"
-                className={`verify-button ${otpVerified ? 'verified' : ''}`}
-                onClick={otpVerified ? undefined : (otpSent ? verifyOtp : sendOtp)}
-                disabled={otpVerified}
-              >
-                {otpVerified ? 'Verified' : (otpSent ? 'Verify OTP' : 'Send OTP')}
-              </button>
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label>Confirm Password</label>
-            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
-          </div>
-
-          {/* Dynamic password requirements */}
-          {(() => {
-            const r = meetsRules(password);
-            return !r.all ? (
-              <div className="password-requirements">
-                <p>Password must include:</p>
-                <ul>
-                  <li className={r.lengthOk ? 'ok' : ''}>Minimum 8 characters</li>
-                  <li className={r.lowerOk && r.upperOk ? 'ok' : ''}>Lowercase and UPPERCASE letters</li>
-                  <li className={r.numberOk ? 'ok' : ''}>Numbers (0-9)</li>
-                  <li className={r.specialOk ? 'ok' : ''}>Special characters (!@#$%^&* etc.)</li>
-                </ul>
-              </div>
-            ) : null;
-          })()}
-
-          {/* ✅ reCAPTCHA Section */}
-          <div className="form-group" style={{ marginTop: '1rem' }}>
-            <ReCAPTCHA
-              ref={recaptchaRef}
-              sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_"
-              onChange={onRecaptchaChange}
-              onExpired={onRecaptchaExpired}
-              onErrored={onRecaptchaError}
-            />
-          </div>
-
-          {error && <div className="error-message">{error}</div>}
-          {success && <div style={{ color: 'green', fontSize: '.9rem' }}>{success}</div>}
-
-          <button
-            type="submit"
-            className="submit-button"
-            disabled={!otpVerified || !recaptchaToken}
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Select Department *</label>
+          <select
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            required
           >
-            Create Account
-          </button>
-        </form>
-      )}
-
-      {!isAdmin && (
-        <div className="auth-footer">
-          Already have an account? <Link to={`/login?dept=${encodeURIComponent(selectedDept || '')}`}>Login</Link>
+            <option value="">-- Choose a department --</option>
+            {departments.map((dept) => (
+              <option key={dept.value} value={dept.value}>
+                {dept.label}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
-      <div className="auth-change-dept">
-        <Link to="/department">Change Department</Link>
+
+        <div className="form-group">
+          <label>User ID</label>
+          <input value={userId} onChange={e => setUserId(e.target.value)} autoFocus required />
+        </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+        </div>
+        <div className="form-group">
+          <label>Email Verification OTP</label>
+          <div className="email-verification-group">
+            <input type="text" placeholder="Enter OTP" value={otp} onChange={e => setOtp(e.target.value)} disabled={!otpSent} />
+            <button
+              type="button"
+              className={`verify-button ${otpVerified ? 'verified' : ''}`}
+              onClick={otpVerified ? undefined : (otpSent ? verifyOtp : sendOtp)}
+              disabled={otpVerified}
+            >
+              {otpVerified ? 'Verified' : (otpSent ? 'Verify OTP' : 'Send OTP')}
+            </button>
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Password</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+        </div>
+        <div className="form-group">
+          <label>Confirm Password</label>
+          <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+        </div>
+
+        {/* Dynamic password requirements */}
+        {(() => {
+          const r = meetsRules(password);
+          return !r.all ? (
+            <div className="password-requirements">
+              <p>Password must include:</p>
+              <ul>
+                <li className={r.lengthOk ? 'ok' : ''}>Minimum 8 characters</li>
+                <li className={r.lowerOk && r.upperOk ? 'ok' : ''}>Lowercase and UPPERCASE letters</li>
+                <li className={r.numberOk ? 'ok' : ''}>Numbers (0-9)</li>
+                <li className={r.specialOk ? 'ok' : ''}>Special characters (!@#$%^&* etc.)</li>
+              </ul>
+            </div>
+          ) : null;
+        })()}
+
+        {/* ✅ reCAPTCHA Section */}
+        <div className="form-group" style={{ marginTop: '1rem' }}>
+          <ReCAPTCHA
+            ref={recaptchaRef}
+            sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_"
+            onChange={onRecaptchaChange}
+            onExpired={onRecaptchaExpired}
+            onErrored={onRecaptchaError}
+          />
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+        {success && <div style={{ color: 'green', fontSize: '.9rem' }}>{success}</div>}
+
+        <button
+          type="submit"
+          className="submit-button"
+          disabled={!otpVerified || !recaptchaToken || !department}
+        >
+          Create Account
+        </button>
+      </form>
+
+      <div className="auth-footer">
+        Already have an account? <Link to="/login">Login</Link>
       </div>
     </div>
   );

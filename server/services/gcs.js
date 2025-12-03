@@ -88,12 +88,19 @@ async function deleteFromGCS(gcsObjectKey) {
 }
 
 // Create a write stream to GCS
-function createGCSWriteStream(filename, contentType) {
+function createGCSWriteStream(filename, contentType, opts = {}) {
   const bucket = getBucket();
   const file = bucket.file(filename);
+  const {
+    resumable = true,
+    metadata = {},
+    validation = 'crc32c'
+  } = opts;
   return file.createWriteStream({
     contentType,
-    resumable: false
+    resumable,
+    metadata: { contentType, ...metadata },
+    validation
   });
 }
 
