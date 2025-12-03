@@ -13,16 +13,9 @@ function AdminDashboard() {
   // Redirect if not logged in as admin
   const token = localStorage.getItem('token');
   const role = localStorage.getItem('role');
-  const loginSource = localStorage.getItem('adminLoginSource'); // 'user-login' or 'ceo-portal'
 
   if (!token || role !== 'admin') {
     navigate('/');
-    return null;
-  }
-
-  // If admin logged in from User Login page, redirect to regular dashboard
-  if (loginSource === 'user-login') {
-    navigate('/dashboard');
     return null;
   }
 
@@ -48,6 +41,10 @@ function AdminDashboard() {
     setActiveSection('projects');
     setSelectedTeam(null);
     setSelectedUser(null);
+  };
+
+  const handleMyFilesClick = () => {
+    navigate('/dashboard');
   };
 
   const handleBack = () => {
@@ -91,6 +88,10 @@ function AdminDashboard() {
           <div className="admin-card projects-card" onClick={handleProjectsClick}>
             <h3>Projects</h3>
             <p>Manage all projects</p>
+          </div>
+          <div className="admin-card myfiles-card" onClick={handleMyFilesClick}>
+            <h3>My Files</h3>
+            <p>View and manage all files</p>
           </div>
         </div>
       )}

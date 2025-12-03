@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_ENDPOINTS } from '../utils/api'; // Make sure this path is correct
 import '../styles/Navbar.css'; // Import the new CSS file
+import Logo from '../assets/CB-logo.png';
 
 function Navbar() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -40,7 +41,7 @@ function Navbar() {
 
         handleAuthChange(); // Initial check
         window.addEventListener('auth-changed', handleAuthChange);
-        
+
         // Close dropdown when clicking outside
         const handleClickOutside = (event) => {
             if (menuRef.current && !menuRef.current.contains(event.target)) {
@@ -54,7 +55,7 @@ function Navbar() {
             window.removeEventListener('auth-changed', handleAuthChange);
         };
     }, []);
-    
+
     // --- Actions ---
 
     const handleLogout = () => {
@@ -65,7 +66,7 @@ function Navbar() {
         window.dispatchEvent(new Event('auth-changed'));
         navigate('/');
     };
-    
+
     const handleChangePassword = async () => {
         setIsMenuOpen(false);
         try {
@@ -87,7 +88,7 @@ function Navbar() {
     const handleToggle2FA = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
-        
+
         const newState = !is2faEnabled;
         try {
             const res = await fetch(API_ENDPOINTS.TOGGLE_2FA, {
@@ -96,7 +97,7 @@ function Navbar() {
                 body: JSON.stringify({ enable: newState }),
             });
             if (!res.ok) throw new Error('Failed to update 2FA status');
-            
+
             setIs2faEnabled(newState); // Update state on success
             alert(`Two-Factor Authentication has been ${newState ? 'enabled' : 'disabled'}.`);
         } catch (err) {
@@ -109,7 +110,13 @@ function Navbar() {
     return (
         <nav className="cb-navbar">
             <div className="cb-nav-left">
-                <Link to="/" className="cb-brand">ClearBoard</Link>
+                <Link to="/" className="cb-brand">
+                    <img
+                        src={Logo}
+                        alt="ClearBoard Logo"
+                        className="cb-logo"
+                    />
+                </Link>
                 <ul className="cb-nav-links">
                     <li><a href="/#features">Features</a></li>
                     <li><a href="/about">About</a></li>
@@ -122,7 +129,7 @@ function Navbar() {
                             <div className="user-avatar">{userInitial}</div>
                             <span className="user-name">{currentUser.id}</span>
                         </button>
-                        
+
                         {isMenuOpen && (
                             <div className="dropdown-menu">
                                 <div className="dropdown-header">
@@ -148,7 +155,6 @@ function Navbar() {
                     </div>
                 ) : (
                     <>
-                        <button className="cb-nav-signin" onClick={() => navigate('/admin-login')} style={{ marginRight: '10px' }}>CEO Portal</button>
                         <button className="cb-nav-signin" onClick={() => navigate('/login')}>Login</button>
                         <Link to="/signup" className="cb-nav-cta">Sign Up</Link>
                     </>

@@ -13,11 +13,11 @@ const Busboy = require('busboy');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pump = promisify(pipeline);
-const { 
-  uploadToGCS, 
-  getGCSDownloadStream, 
-  getSignedUrl, 
-  getFileMetadata, 
+const {
+  uploadToGCS,
+  getGCSDownloadStream,
+  getSignedUrl,
+  getFileMetadata,
   deleteFromGCS,
   createGCSWriteStream
 } = require('./services/gcs');
@@ -56,7 +56,7 @@ app.use((req, res, next) => {
 
 // Keep cors package too (no harm) in case of future dynamic needs
 const corsOptions = {
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     if (!origin) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
@@ -81,11 +81,11 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 // Hardcoded users (legacy)
 const HARDCODED_USERS = [
-  { userId: 'HaroonMirza', email:'haroon.mirza040602@gmail.com', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
+  { userId: 'HaroonMirza', email: 'haroon.mirza040602@gmail.com', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
   { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user', department: 'Software Development' },
   { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
   { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user', department: 'Business Development' },
-  { userId: 'AliZakaria', password: 'admin123', id: 'admin-1', role: 'admin', department: 'Admin' }
+  { userId: 'CB_CEO_AliZakaria_01', password: 'admin123', id: 'admin-1', role: 'admin', department: 'Admin' }
 ];
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
@@ -210,11 +210,11 @@ async function loadMeta() {
   try {
     const stream = getGCSDownloadStream(META_GCS_KEY);
     const chunks = [];
-    
+
     for await (const chunk of stream) {
       chunks.push(chunk);
     }
-    
+
     const data = Buffer.concat(chunks).toString('utf8');
     console.log('Metadata loaded from GCS');
     return JSON.parse(data);
@@ -247,11 +247,11 @@ async function loadUsers() {
   try {
     const stream = getGCSDownloadStream(USERS_GCS_KEY);
     const chunks = [];
-    
+
     for await (const chunk of stream) {
       chunks.push(chunk);
     }
-    
+
     const data = Buffer.concat(chunks).toString('utf8');
     console.log('Users loaded from GCS');
     return JSON.parse(data);
@@ -324,7 +324,7 @@ app.post('/api/signup', async (req, res) => {
     // Check if user already exists
     const allUsers = await getAllUsers();
     const existingUser = allUsers.find(u => u.userId.toLowerCase() === userId.toLowerCase());
-    
+
     if (existingUser) {
       return res.status(409).json({ message: 'User ID already exists' });
     }
@@ -356,9 +356,9 @@ app.post('/api/signup', async (req, res) => {
     // Generate token
     const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role, department: newUser.department }, JWT_SECRET, { expiresIn: '1d' });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'User registered successfully',
-      token, 
+      token,
       role: newUser.role,
       userId: newUser.userId,
       department: newUser.department
@@ -376,147 +376,147 @@ app.post('/api/signup', async (req, res) => {
 
 // ✅ NEW: Endpoint for LOGGED-IN users to change their password
 app.post('/api/auth/change-password', auth, async (req, res) => {
-    try {
-        if (!req.user?.id) {
-            return res.status(401).json({ message: 'Authentication required.' });
-        }
-
-        const allUsers = await getAllUsers();
-        const currentUser = allUsers.find(u => u.id === req.user.id);
-
-        if (!currentUser || !currentUser.email) {
-            return res.status(404).json({ message: 'User or user email not found.' });
-        }
-        
-        const userEmail = currentUser.email;
-        const resetToken = jwt.sign({ userId: currentUser.id, email: userEmail }, JWT_SECRET, { expiresIn: '15m' });
-        const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
-        
-        // ... (email sending logic remains the same)
-        const subject = 'Your Password Reset Link';
-        const text = `Hi ${currentUser.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
-        const html = resetPasswordHtml(currentUser.userId, resetLink);
-        
-        if (mailer) {
-            await mailer.sendMail({ 
-                from: EMAIL_FROM, 
-                to: userEmail, 
-                subject, 
-                text,
-                html,
-                priority: 'high',
-                headers: {
-                  'X-Priority': '1',
-                  'X-MSMail-Priority': 'High',
-                  'Importance': 'high'
-                }
-            });
-        } else {
-            console.log(`[DEV PASSWORD RESET LINK] For ${userEmail}: ${resetLink}`);
-        }
-
-        res.json({ message: 'A password reset link has been sent to your registered email.' });
-
-    } catch (err) {
-        console.error('Change password error:', err);
-        res.status(500).json({ message: 'An error occurred.' });
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required.' });
     }
+
+    const allUsers = await getAllUsers();
+    const currentUser = allUsers.find(u => u.id === req.user.id);
+
+    if (!currentUser || !currentUser.email) {
+      return res.status(404).json({ message: 'User or user email not found.' });
+    }
+
+    const userEmail = currentUser.email;
+    const resetToken = jwt.sign({ userId: currentUser.id, email: userEmail }, JWT_SECRET, { expiresIn: '15m' });
+    const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
+
+    // ... (email sending logic remains the same)
+    const subject = 'Your Password Reset Link';
+    const text = `Hi ${currentUser.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+    const html = resetPasswordHtml(currentUser.userId, resetLink);
+
+    if (mailer) {
+      await mailer.sendMail({
+        from: EMAIL_FROM,
+        to: userEmail,
+        subject,
+        text,
+        html,
+        priority: 'high',
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
+      });
+    } else {
+      console.log(`[DEV PASSWORD RESET LINK] For ${userEmail}: ${resetLink}`);
+    }
+
+    res.json({ message: 'A password reset link has been sent to your registered email.' });
+
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ message: 'An error occurred.' });
+  }
 });
 
 
 // ✅ MODIFIED: Endpoint for LOGGED-OUT users to recover their password
 // Note: We've removed the 'auth' middleware and the logic for logged-in users
 app.post('/api/auth/forgot-password', async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) {
-            return res.status(400).json({ message: 'Email address is required.' });
-        }
-
-        const allUsers = await getAllUsers();
-        const user = allUsers.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
-
-        if (!user) {
-            console.log(`Password reset requested for non-existent email: ${email}`);
-            return res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
-        }
-        
-        const resetToken = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '15m' });
-        const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
-
-        // ... (email sending logic remains the same)
-        const subject = 'Your Password Reset Link';
-        const text = `Hi ${user.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
-        const html = resetPasswordHtml(user.userId, resetLink);
-        
-        if (mailer) {
-            await mailer.sendMail({ 
-                from: EMAIL_FROM, 
-                to: email, 
-                subject, 
-                text,
-                html,
-                priority: 'high',
-                headers: {
-                  'X-Priority': '1',
-                  'X-MSMail-Priority': 'High',
-                  'Importance': 'high'
-                }
-            });
-        } else {
-            console.log(`[DEV PASSWORD RESET LINK] For ${email}: ${resetLink}`);
-        }
-
-        res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
-
-    } catch (err) {
-        console.error('Forgot password error:', err);
-        res.status(500).json({ message: 'An error occurred.' });
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email address is required.' });
     }
+
+    const allUsers = await getAllUsers();
+    const user = allUsers.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+
+    if (!user) {
+      console.log(`Password reset requested for non-existent email: ${email}`);
+      return res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+    }
+
+    const resetToken = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '15m' });
+    const resetLink = `https://fifth-flame-472409-q0.web.app/reset-password/${resetToken}`;
+
+    // ... (email sending logic remains the same)
+    const subject = 'Your Password Reset Link';
+    const text = `Hi ${user.userId},\n\nPlease click the link to reset your password. It's valid for 15 minutes.\n\n${resetLink}`;
+    const html = resetPasswordHtml(user.userId, resetLink);
+
+    if (mailer) {
+      await mailer.sendMail({
+        from: EMAIL_FROM,
+        to: email,
+        subject,
+        text,
+        html,
+        priority: 'high',
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
+      });
+    } else {
+      console.log(`[DEV PASSWORD RESET LINK] For ${email}: ${resetLink}`);
+    }
+
+    res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ message: 'An error occurred.' });
+  }
 });
 
 
 // RESET THE PASSWORD USING THE TOKEN FROM THE LINK
 app.post('/api/auth/reset-password', async (req, res) => {
-    try {
-        const { token, newPassword } = req.body;
+  try {
+    const { token, newPassword } = req.body;
 
-        if (!token || !newPassword) {
-            return res.status(400).json({ message: 'Token and new password are required.' });
-        }
-        
-        if (newPassword.length < 8) {
-            return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
-        }
-
-        let decoded;
-        try {
-            decoded = jwt.verify(token, JWT_SECRET);
-        } catch (e) {
-            return res.status(400).json({ message: 'Invalid or expired reset token.' });
-        }
-
-        const { userId } = decoded;
-        
-        const registeredUsers = await loadUsers();
-        const userIndex = registeredUsers.findIndex(u => u.id === userId);
-
-        if (userIndex === -1) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
-        
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        registeredUsers[userIndex].password = hashedPassword;
-
-        await saveUsers(registeredUsers);
-        
-        console.log(`Password reset successfully for user ID: ${userId}`);
-        res.json({ message: 'Password has been reset successfully.' });
-
-    } catch (err) {
-        console.error('Reset password error:', err);
-        res.status(500).json({ message: 'Failed to reset password.' });
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token and new password are required.' });
     }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(400).json({ message: 'Invalid or expired reset token.' });
+    }
+
+    const { userId } = decoded;
+
+    const registeredUsers = await loadUsers();
+    const userIndex = registeredUsers.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    registeredUsers[userIndex].password = hashedPassword;
+
+    await saveUsers(registeredUsers);
+
+    console.log(`Password reset successfully for user ID: ${userId}`);
+    res.json({ message: 'Password has been reset successfully.' });
+
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ message: 'Failed to reset password.' });
+  }
 });
 
 // Send OTP
@@ -534,10 +534,10 @@ app.post('/api/auth/send-otp', async (req, res) => {
     const html = otpHtml('', code);
 
     if (mailer) {
-      await mailer.sendMail({ 
-        from: EMAIL_FROM, 
-        to: email, 
-        subject, 
+      await mailer.sendMail({
+        from: EMAIL_FROM,
+        to: email,
+        subject,
         text,
         html,
         priority: 'high',
@@ -611,7 +611,7 @@ app.post('/api/login', async (req, res) => {
 
     // Check password
     let isValidPassword = false;
-    
+
     if (isHardcodedUser) {
       console.log(`[LOGIN] User is hardcoded - comparing plain text passwords`);
       console.log(`[LOGIN] Provided password: "${password}"`);
@@ -663,9 +663,9 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '15m' });
-    
+
     console.log(`User logged in: ${userId} (${user.role})`);
-    
+
     res.json({ token, role: user.role, userId: user.userId, department: user.department });
 
   } catch (err) {
@@ -732,9 +732,9 @@ app.post('/api/files/upload', auth, async (req, res) => {
       const maxVersion = sameGroup.length ? Math.max(...sameGroup.map(f => f.version || 1)) : 0;
       const firstUploadedAt = sameGroup.length
         ? sameGroup.reduce((earliest, f) => {
-            const ts = f.uploadedAt || nowIso;
-            return ts < earliest ? ts : earliest;
-          }, sameGroup[0].uploadedAt || nowIso)
+          const ts = f.uploadedAt || nowIso;
+          return ts < earliest ? ts : earliest;
+        }, sameGroup[0].uploadedAt || nowIso)
         : nowIso;
 
       const version = maxVersion + 1;
@@ -852,16 +852,16 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
     const { fileId } = req.params;
     const meta = await loadMeta();
     const file = meta[fileId];
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
 
     // Authorization check - allow access to own files and shared files
-    const hasAccess = req.user.role === 'admin' || 
-                     file.ownerId === req.user.id || 
-                     (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
-    
+    const hasAccess = req.user.role === 'admin' ||
+      file.ownerId === req.user.id ||
+      (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
+
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -1047,9 +1047,9 @@ app.get('/api/files', auth, async (req, res) => {
   try {
     const meta = await loadMeta();
     const isAdmin = req.user.role === 'admin';
-    
+
     console.log(`List request from user: ${req.user.userId} (${req.user.role})`);
-    
+
     // Get user's own files and files shared with their department
     const userFiles = Object.values(meta).filter(f => {
       if (isAdmin) return true;
@@ -1057,12 +1057,12 @@ app.get('/api/files', auth, async (req, res) => {
       if (f.isShared && f.sharedWithTeams && f.sharedWithTeams.includes(req.user.department)) return true;
       return false;
     });
-// ✅ ADD THIS LOGGING BLOCK TO INSPECT THE DATA
-console.log("--- INSPECTING ALL USER FILES BEFORE GROUPING ---");
-userFiles.forEach(f => {
-  console.log(`ID: ${f.id}, OriginalName: ${f.originalname}, BaseName: ${f.baseName}`);
-});
-console.log("-------------------------------------------");
+    // ✅ ADD THIS LOGGING BLOCK TO INSPECT THE DATA
+    console.log("--- INSPECTING ALL USER FILES BEFORE GROUPING ---");
+    userFiles.forEach(f => {
+      console.log(`ID: ${f.id}, OriginalName: ${f.originalname}, BaseName: ${f.baseName}`);
+    });
+    console.log("-------------------------------------------");
 
     console.log(`Found ${userFiles.length} files for user`);
 
@@ -1078,7 +1078,7 @@ console.log("-------------------------------------------");
     const files = Object.values(groups).map(arr => {
       arr.sort((a, b) => (b.version || 1) - (a.version || 1));
       const latest = arr[0];
-    const totalGroupSize = arr.reduce((sum, v) => sum + (v.size || 0), 0);
+      const totalGroupSize = arr.reduce((sum, v) => sum + (v.size || 0), 0);
 
       // Return the new, correct data structure
       return {
@@ -1124,33 +1124,33 @@ app.get('/api/files/download/:fileKey/version/:version', auth, async (req, res) 
     const meta = await loadMeta();
     const allFiles = Object.values(meta);
     const currentFile = allFiles.find(f => f.id === fileKey);
-    
+
     if (!currentFile) {
       return res.status(404).json({ message: 'File not found' });
     }
-    
+
     // Authorization check - allow access to own files and shared files
-    const hasAccess = req.user.role === 'admin' || 
-                     currentFile.ownerId === req.user.id || 
-                     (currentFile.isShared && currentFile.sharedWithTeams && currentFile.sharedWithTeams.includes(req.user.department));
-    
+    const hasAccess = req.user.role === 'admin' ||
+      currentFile.ownerId === req.user.id ||
+      (currentFile.isShared && currentFile.sharedWithTeams && currentFile.sharedWithTeams.includes(req.user.department));
+
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     // ✅ THIS IS THE FIX: We now group files by 'baseName'
-    const versionGroup = allFiles.filter(f => 
-      f.baseName === currentFile.baseName && 
+    const versionGroup = allFiles.filter(f =>
+      f.baseName === currentFile.baseName &&
       (f.category || 'Others') === (currentFile.category || 'Others') &&
       f.ownerId === currentFile.ownerId
     );
-    
+
     const targetVersion = versionGroup.find(f => (f.version || 1) === Number(version));
-    
+
     if (!targetVersion) {
       return res.status(404).json({ message: 'Requested version not found' });
     }
-    
+
     // Redirect to the simple download endpoint with the correct ID for the target version
     res.redirect(307, `/api/files/download/${targetVersion.id}`);
 
@@ -1166,34 +1166,34 @@ app.post('/api/files/share/:fileId', auth, async (req, res) => {
     const { fileId } = req.params;
     const userId = req.user.id;
     const userDepartment = req.user.department;
-    
+
     if (!userDepartment) {
       return res.status(400).json({ message: 'User department information not found' });
     }
-    
+
     const meta = await loadMeta();
     const file = meta[fileId];
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
-    
+
     // Check if user owns the file or has admin role
     if (file.ownerId !== userId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'You can only share files you own' });
     }
-    
+
     // Update file sharing status
     file.isShared = true;
     file.sharedWithTeams = [userDepartment];
     file.sharedAt = new Date().toISOString();
     file.sharedBy = userId;
-    
+
     await saveMeta(meta);
-    
+
     console.log(`File ${fileId} shared with ${userDepartment} team by ${req.user.userId}`);
-    
-    res.json({ 
+
+    res.json({
       message: `File shared successfully with ${userDepartment} team members`,
       fileId: file.id,
       sharedWithTeams: file.sharedWithTeams
@@ -1209,30 +1209,30 @@ app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
     const userId = req.user.id;
-    
+
     const meta = await loadMeta();
     const file = meta[fileId];
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
-    
+
     // Check if user owns the file or has admin role
     if (file.ownerId !== userId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'You can only unshare files you own' });
     }
-    
+
     // Update file sharing status
     file.isShared = false;
     file.sharedWithTeams = [];
     file.sharedAt = null;
     file.sharedBy = null;
-    
+
     await saveMeta(meta);
-    
+
     console.log(`File ${fileId} unshared by ${req.user.userId}`);
-    
-    res.json({ 
+
+    res.json({
       message: 'File sharing removed successfully',
       fileId: file.id
     });
@@ -1253,7 +1253,7 @@ app.use((err, req, res, next) => {
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
-  } catch {}
+  } catch { }
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
   if (!res.headersSent) res.status(status).json({ message, error: message });

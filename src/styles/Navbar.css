@@ -6,7 +6,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 2rem;
+    padding: 0 2rem;
+    /* optional: adjust horizontal padding */
+    height: 80px;
+    /* fixed navbar height */
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
@@ -14,11 +17,25 @@
     transition: all 0.3s ease;
 }
 
+/* Logo inside navbar */
+.cb-logo {
+    height: 70%;
+    /* scales relative to navbar height */
+    max-height: 160px;
+    /* prevents it from being too large */
+    width: auto;
+    object-fit: contain;
+    display: block;
+}
+
+
 .cb-nav-left {
     display: flex;
     align-items: center;
     gap: 3rem;
 }
+
+
 
 .cb-brand {
     font-size: 1.5rem;
@@ -39,17 +56,19 @@
 .cb-nav-links {
     display: flex;
     list-style: none;
-    gap: 2rem;
-    margin: 0;
+    gap: 1rem;
+    margin-left: 210px;
     padding: 0;
 }
+
 .cb-nav-links li a {
     margin-left: 20px;
-    font-size: 1rem; /* increased font size */
-  font-weight: 600;
-  color: var(--text-dark);
-  text-decoration: none;
-  transition: color 0.3s ease, transform 0.2s ease;
+    font-size: 1rem;
+    /* increased font size */
+    font-weight: 600;
+    color: var(--text-dark);
+    text-decoration: none;
+    transition: color 0.3s ease, transform 0.2s ease;
 }
 
 .cb-nav-links a {
@@ -185,6 +204,7 @@
         opacity: 0;
         transform: translateY(-10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);

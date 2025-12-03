@@ -60,11 +60,6 @@ function Login({ onLogin }) {
       if (data.department) localStorage.setItem('department', data.department);
       if (data.userId) localStorage.setItem('userId', data.userId);
       
-      // Mark the login source
-      if (data.role === 'admin') {
-        localStorage.setItem('adminLoginSource', 'user-login');
-      }
-      
       // Calculate and store the exact time the session should expire
       const expiryTime = new Date().getTime() + 15 * 60 * 1000; // 15 minutes from now
       localStorage.setItem('sessionExpiry', expiryTime);
@@ -74,7 +69,13 @@ function Login({ onLogin }) {
       } catch {}
 
       if (onLogin) onLogin();
-      navigate('/dashboard');
+
+      // Redirect admins (CEO) to the admin dashboard, others to the regular dashboard
+      if (data.role === 'admin') {
+        navigate('/admin-dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err.message || 'Invalid credentials');
       if (recaptchaRef.current) recaptchaRef.current.reset();
