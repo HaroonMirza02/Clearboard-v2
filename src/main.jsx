@@ -13,6 +13,7 @@ import Signup from './components/Signup.jsx'
 import AdminLogin from './components/AdminLogin.jsx'
 import ResetPassword from './components/ResetPassword'; // Adjust path
 import AboutPage from './components/AboutPage'; // ✅ Import the new About Page
+import FacetedFileList from './components/FacetedFileList'; // ✅ Import the new Faceted File List
 
 const router = createBrowserRouter([
   {
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { path: '/signup', element: <Signup /> },
       { path: '/admin-login', element: <AdminLogin /> },
       { path: '/dashboard', element: <Dashboard /> },
+      { path: '/files/grid', element: <FacetedFileList /> }, // ✅ New Faceted File List View
       { path: '/reset-password/:token', element: <ResetPassword /> },
       { path: '*', element: <App /> },
     ],

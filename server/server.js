@@ -204,6 +204,79 @@ const otpHtml = (userId, code) => emailBaseTemplate(
 // Cloud-based metadata storage keys
 const META_GCS_KEY = 'metadata/filemeta.json';
 const USERS_GCS_KEY = 'metadata/users.json';
+const COUNTER_GCS_KEY = 'metadata/counter.json';
+
+// Load counter from GCS
+async function loadCounter() {
+  try {
+    const stream = getGCSDownloadStream(COUNTER_GCS_KEY);
+    const chunks = [];
+
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    const data = Buffer.concat(chunks).toString('utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
+      console.log('Creating new counter.json in GCS');
+      const initialCounter = { fileCounter: 0 };
+      await saveCounter(initialCounter);
+      return initialCounter;
+    }
+    console.error('Error loading counter:', err);
+    return { fileCounter: 0 };
+  }
+}
+
+// Save counter to GCS
+async function saveCounter(counter) {
+  try {
+    const jsonString = JSON.stringify(counter, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf8');
+    await uploadToGCS(COUNTER_GCS_KEY, buffer, 'application/json');
+  } catch (err) {
+    console.error('Error saving counter:', err);
+    throw err;
+  }
+}
+
+// Generate ClearBoard file name
+// Format: Cb_012_CEO_AlNoor_whitelogo_01_010925
+// Cb = ClearBoard prefix
+// 012 = Unique incremental ID (3 digits, zero-padded)
+// CEO = User who uploaded (from ownerUserId)
+// AlNoor_whitelogo = Original filename (spaces replaced with -, underscores kept)
+// 01 = Version number (2 digits, zero-padded)
+// 010925 = File creation date (DDMMYY format)
+function generateClearBoardFileName(counter, ownerUserId, originalFileName, version, fileCreatedAt) {
+  // 1. Cb prefix
+  const prefix = 'Cb';
+
+  // 2. Unique ID (3 digits, zero-padded)
+  const uniqueId = String(counter).padStart(3, '0');
+
+  // 3. User who uploaded
+  const user = ownerUserId || 'Unknown';
+
+  // 4. Original filename (remove extension, replace spaces with -, keep underscores)
+  const fileNameWithoutExt = path.parse(originalFileName).name;
+  const sanitizedFileName = fileNameWithoutExt.replace(/\s+/g, '-');
+
+  // 5. Version number (2 digits, zero-padded)
+  const versionStr = String(version).padStart(2, '0');
+
+  // 6. File creation date (DDMMYY format)
+  const createdDate = new Date(fileCreatedAt);
+  const day = String(createdDate.getDate()).padStart(2, '0');
+  const month = String(createdDate.getMonth() + 1).padStart(2, '0');
+  const year = String(createdDate.getFullYear()).slice(-2);
+  const dateStr = `${day}${month}${year}`;
+
+  // Combine all parts with underscores
+  return `${prefix}_${uniqueId}_${user}_${sanitizedFileName}_${versionStr}_${dateStr}`;
+}
 
 // Load metadata from GCS
 async function loadMeta() {
@@ -719,7 +792,9 @@ app.post('/api/files/upload', auth, async (req, res) => {
 
     const finishUpload = async () => {
       if (!uploadId) return; // If file never arrived
-      const metadata = await getFileMetadata(gcsObjectKey);
+      // Increased retries and delay for better reliability with multiple uploads
+      // 5 retries × 2 seconds = up to 10 seconds wait time
+      const metadata = await getFileMetadata(gcsObjectKey, 5, 2000);
       size = metadata.size;
 
       // Load meta now (post-upload) and determine firstUploadedAt and version
@@ -744,10 +819,42 @@ app.post('/api/files/upload', auth, async (req, res) => {
         ? sameGroup[0].fileCreatedAt
         : (fileCreatedAtField ? new Date(fileCreatedAtField).toISOString() : nowIso);
 
+      // Load and increment counter for new files only (version 1)
+      let clearBoardFileName = baseName;
+      let globalFileId = null;
+
+      if (version === 1) {
+        const counterData = await loadCounter();
+        counterData.fileCounter = (counterData.fileCounter || 0) + 1;
+        globalFileId = counterData.fileCounter;
+        await saveCounter(counterData);
+
+        // Generate the new ClearBoard file name
+        clearBoardFileName = generateClearBoardFileName(
+          globalFileId,
+          ownerUserId,
+          originalname,
+          version,
+          fileCreatedAtDate
+        );
+      } else {
+        // For subsequent versions, use the same globalFileId and clearBoardFileName pattern
+        globalFileId = sameGroup[0].globalFileId;
+        clearBoardFileName = generateClearBoardFileName(
+          globalFileId,
+          ownerUserId,
+          originalname,
+          version,
+          fileCreatedAtDate
+        );
+      }
+
       meta[uploadId] = {
         id: uploadId,
         originalname,
-        baseName,
+        baseName: clearBoardFileName, // Use the new naming convention
+        displayName: clearBoardFileName, // For display purposes
+        originalBaseName: baseName, // Keep original for reference
         mimetype,
         gcsObjectKey,
         storageProvider: 'gcs',
@@ -760,11 +867,12 @@ app.post('/api/files/upload', auth, async (req, res) => {
         fileCreatedAt: fileCreatedAtDate,
         size,
         ownerId,
-        ownerUserId
+        ownerUserId,
+        globalFileId // Store the global file ID for version tracking
       };
 
       await saveMeta(meta);
-      res.json({ message: 'Upload complete', fileId: uploadId, version, category, size });
+      res.json({ message: 'Upload complete', fileId: uploadId, version, category, size, fileName: clearBoardFileName });
     };
 
     busboy.on('field', (name, val) => {

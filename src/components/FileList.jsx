@@ -8,9 +8,9 @@ import '../styles/Modal.css'; // The new modal styles
 import AdminUserFilter from './AdminUserFilter';
 
 const TEAM_CATEGORIES = {
-  'Software Development': ['TechResearch', 'ProductDemo', 'WebDevAssets', 'Cloud', 'SourceCode'],
-  'Business Development': ['BusinessStrategyPlans', 'CompetitorAnalysis', 'MarketResearch', 'SalesPitchDecks', 'LeadGenerationReports'],
-  'Data and Research Analyst': ['BIDashboard', 'Datasets', 'TechResearch', 'WebDevAssets', 'Cloud'],
+  'Software Development': ['WebDev Assets', 'General Research', 'Project Demo', 'Source Code'],
+  'Business Development': ['Websites', 'Software', 'Dashboards', 'Financial Research', 'Company Research', 'Graphic Design', 'Storage'],
+  'Data and Research Analyst': ['WebDev Assets', 'General Research', 'Project Demo', 'Source Code'],
   'Admin': [] // will be computed as union below
 };
 
@@ -26,12 +26,13 @@ const getTeamCategories = (dept) => {
 
 // Fixed list of admin project filters used in CEO Portal > Projects card
 const ADMIN_PROJECTS = [
-  'Website Project',
-  'Software Project',
+  'Websites',
+  'Software',
   'Dashboards',
+  'Financial Research',
+  'Company Research',
   'Graphic Design',
-  'Resources',
-  'R&D',
+  'Storage',
 ];
 
 // Styles
@@ -802,9 +803,7 @@ function FileList(props) {
       errors.category = 'Please select a category for the file';
     }
 
-    if (category === 'OtherText' && !customCategory.trim()) {
-      errors.customCategory = 'Please enter a custom category name';
-    }
+
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
@@ -845,12 +844,11 @@ function FileList(props) {
           const formData = new FormData();
           formData.append('file', file);
           formData.append('compress', compress);
-          const finalCategory = category === 'OtherText' ? customCategory.trim() : category;
-          if (!finalCategory) {
-            reject(new Error("Category is missing. Please select or type a category."));
+          if (!category) {
+            reject(new Error("Category is missing. Please select a category."));
             return;
           }
-          formData.append('category', finalCategory);
+          formData.append('category', category);
           formData.append('fileCreatedAt', fileCreatedAt);
           xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
           xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -947,6 +945,29 @@ function FileList(props) {
     }
   };
 
+  // Preview file in browser
+  const handlePreview = async (fileId, name, fileType, version) => {
+    setError('');
+    try {
+      const urlPath = API_ENDPOINTS.DOWNLOAD(fileId, version);
+      const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Preview failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      // Open in new tab for preview
+      window.open(url, '_blank');
+
+      // Clean up after a delay
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 100);
+    } catch (err) {
+      setError('Preview failed');
+    }
+  };
+
+
   const handleShareFile = async (fileId) => {
     try {
       const res = await fetch(API_ENDPOINTS.SHARE_FILE(fileId), {
@@ -1039,6 +1060,62 @@ function FileList(props) {
   return (
     <div style={pageStyle}>
       <div style={container}>
+        {/* Professional Loading Overlay */}
+        {loading && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            animation: 'fadeIn 0.3s ease-in-out'
+          }}>
+            <div style={{
+              textAlign: 'center',
+              animation: 'slideUp 0.5s ease-out'
+            }}>
+              <div style={{
+                position: 'relative',
+                width: '120px',
+                height: '120px',
+                margin: '0 auto 24px'
+              }}>
+                <svg style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  transform: 'rotate(-90deg)'
+                }}>
+                  <circle cx="60" cy="60" r="54" fill="none" stroke="#e5e7eb" strokeWidth="6" />
+                  <circle cx="60" cy="60" r="54" fill="none" stroke="url(#gradient-table)" strokeWidth="6" strokeLinecap="round" strokeDasharray="339.292" strokeDashoffset="0" style={{ animation: 'progress 2s ease-in-out infinite' }} />
+                  <defs>
+                    <linearGradient id="gradient-table" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#8b5cf6" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '36px', animation: 'pulse 2s ease-in-out infinite' }}>📁</div>
+              </div>
+              <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1f2937', margin: '0 0 8px 0', animation: 'fadeIn 0.5s ease-in-out 0.2s both' }}>Loading Your Files</h3>
+              <p style={{ fontSize: '14px', color: '#6b7280', margin: 0, animation: 'fadeIn 0.5s ease-in-out 0.4s both' }}>Please wait while we fetch your documents...</p>
+              <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                {[0, 1, 2].map((i) => (<div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', animation: `bounce 1.4s ease-in-out ${i * 0.2}s infinite` }} />))}
+              </div>
+            </div>
+            <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } @keyframes progress { 0% { stroke-dashoffset: 339.292; } 50% { stroke-dashoffset: 84.823; } 100% { stroke-dashoffset: 339.292; } } @keyframes pulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; } } @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-12px); } }`}</style>
+          </div>
+        )}
+
         {/* Back button for admin when viewing Teams/Projects context */}
         {userRole === 'admin' && isContextView && (
           <div style={{ marginBottom: 16 }}>
@@ -1223,27 +1300,9 @@ function FileList(props) {
                   >
                     <option value="" disabled hidden>Select Category</option>
                     {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
-                    <option value="OtherText">Other (type below)</option>
                   </select>
                   {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
-                  {category === 'OtherText' && (
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Custom category"
-                        value={customCategory}
-                        onChange={readOnlyMode ? undefined : (e => {
-                          setCustomCategory(e.target.value);
-                          if (validationErrors.customCategory) {
-                            setValidationErrors({ ...validationErrors, customCategory: '' });
-                          }
-                        })}
-                        style={{ ...input, marginTop: 8 }}
-                        disabled={readOnlyMode}
-                      />
-                      {validationErrors.customCategory && <div style={errorText}>{validationErrors.customCategory}</div>}
-                    </div>
-                  )}
+
                 </div>
                 <div>
                   <label style={label}>Compression</label>
@@ -1478,7 +1537,13 @@ function FileList(props) {
                   <tr key={fileGroup.id} style={zebra(idx)}>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>{fileGroup.name}</span>
+                        <span
+                          style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
+                          onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}
+                          title="Click to preview"
+                        >
+                          {fileGroup.name}
+                        </span>
                         {fileGroup.isShared && (
                           <span style={{
                             ...pill,
@@ -1526,13 +1591,14 @@ function FileList(props) {
                         </button>
                         {openActionMenuId === fileGroup.id && (
                           <div className="actions-dropdown">
-                            <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>Download</button>
-                            {!readOnlyMode && fileGroup.isOwner && (
+                            <button className="actions-item" onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}>👁️ Preview</button>
+                            <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>⬇️ Download</button>
+                            {/* {!readOnlyMode && fileGroup.isOwner && (
                               fileGroup.isShared ?
                                 <button className="actions-item" onClick={() => handleUnshareFile(displayedVersion.id)}>Unshare</button>
                                 :
                                 <button className="actions-item" onClick={() => handleShareFile(displayedVersion.id)}>Share with Team</button>
-                            )}
+                            )} */}
                             {!readOnlyMode && <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>}
                             {!readOnlyMode && <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>}
                           </div>

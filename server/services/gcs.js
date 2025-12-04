@@ -29,7 +29,7 @@ function uploadToGCS(filename, buffer, contentType) {
 
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
-    
+
     bufferStream
       .pipe(file.createWriteStream(options))
       .on('error', reject)
@@ -50,24 +50,48 @@ function getGCSDownloadStream(filename) {
 function getSignedUrl(filename, expiresInMinutes = 15) {
   const bucket = getBucket();
   const file = bucket.file(filename);
-  
+
   return file.getSignedUrl({
     action: 'read',
     expires: Date.now() + expiresInMinutes * 60 * 1000
   }).then(urls => urls[0]);
 }
 
-// Get file metadata including size
-async function getFileMetadata(filename) {
+// Get file metadata including size (with retry for eventual consistency)
+async function getFileMetadata(filename, retries = 3, delay = 1000) {
   const bucket = getBucket();
   const file = bucket.file(filename);
-  const [metadata] = await file.getMetadata();
-  return {
-    size: parseInt(metadata.size, 10),
-    contentType: metadata.contentType,
-    timeCreated: metadata.timeCreated,
-    updated: metadata.updated
-  };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // First check if file exists
+      const [exists] = await file.exists();
+      if (!exists) {
+        if (attempt < retries) {
+          console.log(`File ${filename} not found yet, retrying (${attempt}/${retries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw new Error(`File not found in GCS after ${retries} attempts: ${filename}`);
+      }
+
+      // Get metadata
+      const [metadata] = await file.getMetadata();
+      return {
+        size: parseInt(metadata.size, 10),
+        contentType: metadata.contentType,
+        timeCreated: metadata.timeCreated,
+        updated: metadata.updated
+      };
+    } catch (error) {
+      if (attempt < retries && (error.code === 404 || error.message.includes('not found'))) {
+        console.log(`Error getting metadata for ${filename}, retrying (${attempt}/${retries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 async function deleteFromGCS(gcsObjectKey) {
@@ -104,11 +128,11 @@ function createGCSWriteStream(filename, contentType, opts = {}) {
   });
 }
 
-module.exports = { 
-  uploadToGCS, 
-  getGCSDownloadStream, 
+module.exports = {
+  uploadToGCS,
+  getGCSDownloadStream,
   getSignedUrl,
   createGCSWriteStream,
   getFileMetadata,
-    deleteFromGCS
+  deleteFromGCS
 };
