@@ -32,23 +32,10 @@ const getFileTypeIcon = (fileType) => {
     return FILE_TYPE_ICONS[fileType?.toLowerCase()] || FILE_TYPE_ICONS.default;
 };
 
-// Generate thumbnail gradient based on file type
+// Generate thumbnail background - clean white with subtle border
 const getThumbnailGradient = (fileType) => {
-    const gradients = {
-        pdf: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        doc: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)',
-        docx: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)',
-        xls: 'linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)',
-        xlsx: 'linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)',
-        ppt: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)',
-        pptx: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)',
-        jpg: 'linear-gradient(135deg, #E91E63 0%, #C2185B 100%)',
-        jpeg: 'linear-gradient(135deg, #E91E63 0%, #C2185B 100%)',
-        png: 'linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)',
-        zip: 'linear-gradient(135deg, #607D8B 0%, #455A64 100%)',
-        default: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-    };
-    return gradients[fileType?.toLowerCase()] || gradients.default;
+    // Return clean white background for all file types
+    return '#ffffff';
 };
 
 function FacetedFileList() {
@@ -740,7 +727,7 @@ function FacetedFileList() {
                             <p className="files-count">Showing {filteredFiles.length} of {files.length} files</p>
                         </div>
                         <button className="upload-btn" onClick={() => setIsUploadModalOpen(true)}>
-                            <span>📤</span>
+
                             <span>Upload a File</span>
                         </button>
                     </div>
@@ -791,12 +778,38 @@ function FacetedFileList() {
                                     <div key={fileGroup.id} className="file-card">
                                         <div
                                             className="file-thumbnail"
-                                            style={{ background: getThumbnailGradient(fileType), cursor: 'pointer' }}
+                                            style={{
+                                                background: getThumbnailGradient(fileType),
+                                                cursor: 'pointer',
+                                                border: '2px solid #e5e7eb',
+                                                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                transition: 'all 0.2s ease'
+                                            }}
                                             onClick={() => handlePreview(latestVersion.id, fileGroup.name, fileType)}
                                             title="Click to preview"
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.borderColor = '#3b82f6';
+                                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.borderColor = '#e5e7eb';
+                                                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                                            }}
                                         >
-                                            <div className="file-type-icon">{getFileTypeIcon(fileType)}</div>
-                                            <div className="file-badge">{fileType.toUpperCase()}</div>
+                                            <div className="file-type-icon" style={{ fontSize: '48px', marginBottom: '8px' }}>{getFileTypeIcon(fileType)}</div>
+                                            <div className="file-badge" style={{
+                                                background: '#f3f4f6',
+                                                color: '#374151',
+                                                padding: '4px 12px',
+                                                borderRadius: '6px',
+                                                fontSize: '11px',
+                                                fontWeight: '600',
+                                                letterSpacing: '0.5px'
+                                            }}>{fileType.toUpperCase()}</div>
                                         </div>
 
                                         <div className="file-info">
