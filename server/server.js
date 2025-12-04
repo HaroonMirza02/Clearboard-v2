@@ -747,6 +747,39 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Get users by department endpoint
+app.get('/api/users/by-department', async (req, res) => {
+  try {
+    const { dept } = req.query;
+
+    const allUsers = await getAllUsers();
+
+    // Map department names
+    const deptMap = {
+      'SoftDev': ['Software Development', 'Data and Research Analyst'], // Include both
+      'BusDev': ['Business Development']
+    };
+
+    let filteredUsers = allUsers;
+
+    if (dept && deptMap[dept]) {
+      filteredUsers = allUsers.filter(u => deptMap[dept].includes(u.department));
+    }
+
+    // Return only necessary fields
+    const users = filteredUsers.map(u => ({
+      userId: u.userId,
+      department: u.department,
+      role: u.role
+    }));
+
+    res.json({ users });
+  } catch (err) {
+    console.error('Get users by department error:', err);
+    res.status(500).json({ message: 'Failed to get users', error: err.message });
+  }
+});
+
 // JWT auth middleware
 function auth(req, res, next) {
   const authHeader = req.headers.authorization;

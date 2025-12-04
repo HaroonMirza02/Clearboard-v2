@@ -54,6 +54,12 @@ function FacetedFileList() {
     const [filterDateTo, setFilterDateTo] = useState('');
     const [filterFileType, setFilterFileType] = useState('');
 
+    // Context-aware states for Teams and Projects
+    const [contextMode, setContextMode] = useState(''); // 'teams' or 'projects' or ''
+    const [selectedOwner, setSelectedOwner] = useState(''); // For Teams context
+    const [selectedProject, setSelectedProject] = useState(''); // For Projects context
+    const [teamDepartment, setTeamDepartment] = useState(''); // 'SoftDev' or 'BusDev'
+
     // Stats
     const [stats, setStats] = useState({ totalFiles: 0, storageUsedMB: 0 });
 
@@ -69,6 +75,9 @@ function FacetedFileList() {
     const [showSuccessNotification, setShowSuccessNotification] = useState(false);
     const uploadAbortControllerRef = useRef(null);
     const progressIntervalRef = useRef(null);
+
+    // Fetched users from API
+    const [fetchedUsers, setFetchedUsers] = useState([]);
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -142,6 +151,67 @@ function FacetedFileList() {
         if (savedDepartment) setDepartment(savedDepartment);
     }, []);
 
+
+    // Parse URL parameters for context (Teams or Projects)
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const user = params.get('user');
+        const project = params.get('project');
+        let dept = params.get('dept');
+
+        if (user) {
+            // Teams context
+            setContextMode('teams');
+            setSelectedOwner(user);
+
+            // Auto-detect department if not provided
+            if (!dept) {
+                const userDeptMap = {
+                    'HaroonMirza': 'SoftDev',
+                    'ZaidBinAsim': 'SoftDev',
+                    'IbrahimMalik': 'SoftDev',
+                    'MirzaUzairBaig': 'BusDev',
+                    'Uzair71': 'BusDev'
+                };
+                dept = userDeptMap[user] || '';
+            }
+            setTeamDepartment(dept || '');
+        } else if (project) {
+            // Projects context
+            setContextMode('projects');
+            setSelectedProject(project);
+        } else {
+            // Normal mode (My Files)
+            setContextMode('');
+            setSelectedOwner('');
+            setSelectedProject('');
+            setTeamDepartment('');
+        }
+    }, [location.search]);
+
+    // Fetch users by department
+    const fetchUsersByDepartment = async (dept) => {
+        if (!dept) return;
+        try {
+            const res = await fetch(API_ENDPOINTS.USERS_BY_DEPARTMENT(dept));
+            if (res.ok) {
+                const data = await res.json();
+                setFetchedUsers(data.users || []);
+                console.log(`✅ Fetched ${data.users?.length || 0} users for ${dept} department`);
+            }
+        } catch (err) {
+            console.error('Failed to fetch users:', err);
+            setFetchedUsers([]);
+        }
+    };
+
+    // Fetch users when department changes
+    useEffect(() => {
+        if (contextMode === 'teams' && teamDepartment) {
+            fetchUsersByDepartment(teamDepartment);
+        }
+    }, [contextMode, teamDepartment]);
+
     useEffect(() => {
         fetchFiles();
     }, [token]);
@@ -166,6 +236,87 @@ function FacetedFileList() {
         ...TEAM_CATEGORIES['Data and Research Analyst'],
     ]));
 
+    // Get unique owners from files (actual usernames from database)
+    const uniqueOwners = React.useMemo(() => {
+        return [...new Set(files.map(f => f.ownerUserId))].filter(Boolean).sort();
+    }, [files]);
+
+    // Department mapping for known users (can be extended)
+    const USER_DEPARTMENT_MAP = {
+        'HaroonMirza': 'SoftDev',
+        'ZaidBinAsim': 'SoftDev',
+        'IbrahimMalik': 'SoftDev',
+        'MirzaUzairBaig': 'BusDev',
+        'Uzair71': 'BusDev'
+    };
+
+    // Get all known users for a department (fallback when no files)
+    const getKnownUsersByDept = (dept) => {
+        return Object.keys(USER_DEPARTMENT_MAP).filter(user => USER_DEPARTMENT_MAP[user] === dept);
+    };
+
+    // Get team members dynamically based on department
+    const getTeamMembersByDept = (dept) => {
+        if (!dept) return uniqueOwners;
+
+        // Filter owners by department
+        const membersFromFiles = uniqueOwners.filter(owner => {
+            const ownerDept = USER_DEPARTMENT_MAP[owner];
+            return ownerDept === dept;
+        });
+
+        // If no members found from files, use known users as fallback
+        if (membersFromFiles.length === 0) {
+            return getKnownUsersByDept(dept);
+        }
+
+        return membersFromFiles;
+    };
+
+    // Team members for current context
+    const teamMembers = React.useMemo(() => {
+        if (contextMode === 'teams' && teamDepartment) {
+            // Use fetched users from API if available
+            if (fetchedUsers.length > 0) {
+                return fetchedUsers.map(u => u.userId).sort();
+            }
+            // Fallback to file owners or known users
+            const members = getTeamMembersByDept(teamDepartment);
+            if (members.length === 0) {
+                return getKnownUsersByDept(teamDepartment);
+            }
+            return members;
+        }
+        return uniqueOwners;
+    }, [contextMode, teamDepartment, uniqueOwners, fetchedUsers]);
+
+    // Debug logging (after teamMembers is defined)
+    useEffect(() => {
+        console.log('🔍 Context Debug:', {
+            contextMode,
+            teamDepartment,
+            selectedOwner,
+            fetchedUsersCount: fetchedUsers?.length || 0,
+            fetchedUsers: fetchedUsers.map(u => u.userId),
+            teamMembersCount: teamMembers?.length || 0,
+            teamMembers: teamMembers
+        });
+    }, [contextMode, teamDepartment, selectedOwner, teamMembers, fetchedUsers]);
+
+    // Projects list
+    const PROJECTS = ['Websites', 'Software', 'Dashboards', 'Financial Research', 'Company Research', 'Graphic Design', 'Storage'];
+
+    // Project-specific categories (same as Business Development)
+    const PROJECT_CATEGORIES = {
+        'Websites': ['Websites'],
+        'Software': ['Software'],
+        'Dashboards': ['Dashboards'],
+        'Financial Research': ['Financial Research'],
+        'Company Research': ['Company Research'],
+        'Graphic Design': ['Graphic Design'],
+        'Storage': ['Storage']
+    };
+
     const getTeamCategories = (dept) => {
         return TEAM_CATEGORIES[dept] || [];
     };
@@ -173,8 +324,22 @@ function FacetedFileList() {
     // Team-specific categories for upload dropdown
     const allCategories = React.useMemo(() => getTeamCategories(department), [department]);
 
-    // Get unique categories
-    const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
+    // Get unique categories - context-aware
+    const uniqueCategories = React.useMemo(() => {
+        if (contextMode === 'teams' && teamDepartment) {
+            // Show categories for the selected team's department
+            if (teamDepartment === 'SoftDev') {
+                return TEAM_CATEGORIES['Software Development'];
+            } else if (teamDepartment === 'BusDev') {
+                return TEAM_CATEGORIES['Business Development'];
+            }
+        } else if (contextMode === 'projects') {
+            // Show only the selected project as category
+            return selectedProject ? [selectedProject] : PROJECTS;
+        }
+        // Normal mode: show all unique categories from files
+        return [...new Set(files.map(f => f.category))].sort();
+    }, [contextMode, teamDepartment, selectedProject, files]);
 
     // Get unique file types
     const uniqueFileTypes = [...new Set(
@@ -184,6 +349,16 @@ function FacetedFileList() {
     // Filtered files
     const filteredFiles = React.useMemo(() => {
         let result = files;
+
+        // Apply owner filter (Teams context)
+        if (contextMode === 'teams' && selectedOwner) {
+            result = result.filter(f => f.ownerUserId === selectedOwner);
+        }
+
+        // Apply project filter (Projects context)
+        if (contextMode === 'projects' && selectedProject) {
+            result = result.filter(f => f.category === selectedProject);
+        }
 
         // Apply category filter
         if (filterCategory) {
@@ -226,7 +401,7 @@ function FacetedFileList() {
         }
 
         return result;
-    }, [files, filterCategory, filterFileType, filterDateFrom, filterDateTo, searchQuery]);
+    }, [files, filterCategory, filterFileType, filterDateFrom, filterDateTo, searchQuery, contextMode, selectedOwner, selectedProject]);
 
     // Clear all filters
     const clearFilters = () => {
@@ -631,6 +806,40 @@ function FacetedFileList() {
                     </button>
                 </div>
 
+                {/* Owner Filter (Teams Context) */}
+                {contextMode === 'teams' && teamDepartment && teamMembers.length > 0 && (
+                    <div className="filter-section">
+                        <label className="filter-section-title">Owner</label>
+                        <select
+                            className="date-filter-input"
+                            value={selectedOwner}
+                            onChange={(e) => setSelectedOwner(e.target.value)}
+                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #e5e7eb' }}
+                        >
+                            {teamMembers.map(member => (
+                                <option key={member} value={member}>{member}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
+                {/* Project Filter (Projects Context) */}
+                {contextMode === 'projects' && (
+                    <div className="filter-section">
+                        <label className="filter-section-title">Project</label>
+                        <select
+                            className="date-filter-input"
+                            value={selectedProject}
+                            onChange={(e) => setSelectedProject(e.target.value)}
+                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #e5e7eb' }}
+                        >
+                            {PROJECTS.map(project => (
+                                <option key={project} value={project}>{project}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 {/* Category Filter */}
                 <div className="filter-section">
                     <label className="filter-section-title">Category</label>
@@ -726,10 +935,12 @@ function FacetedFileList() {
                             <h1>All Files</h1>
                             <p className="files-count">Showing {filteredFiles.length} of {files.length} files</p>
                         </div>
-                        <button className="upload-btn" onClick={() => setIsUploadModalOpen(true)}>
-
-                            <span>Upload a File</span>
-                        </button>
+                        {/* Hide upload button in Teams/Projects context */}
+                        {!contextMode && (
+                            <button className="upload-btn" onClick={() => setIsUploadModalOpen(true)}>
+                                <span>Upload a File</span>
+                            </button>
+                        )}
                     </div>
                     <div className="search-bar">
                         <svg className="search-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
