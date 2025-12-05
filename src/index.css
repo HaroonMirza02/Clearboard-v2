@@ -47,6 +47,10 @@ body {
   width: 100%;
 }
 
+.cb-dashboard {
+  padding-top: calc(80px + 32px); /* ensure content clears the sticky navbar */
+}
+
 /* Navbar */
 .cb-navbar {
   position: sticky;

@@ -5,6 +5,7 @@ import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import Fuse from 'fuse.js';
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
+import '../styles/Calendar.css'; // Professional calendar picker styling
 import AdminUserFilter from './AdminUserFilter';
 
 const TEAM_CATEGORIES = {
@@ -215,6 +216,10 @@ function FileList(props) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null); // File to be edited/deleted
+  // Preview modal states
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewFileData, setPreviewFileData] = useState(null); // { fileId, name, fileType, version, url }
+  const [previewLoading, setPreviewLoading] = useState(false);
   // ✅ UPDATED state for the edit form
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -744,8 +749,6 @@ function FileList(props) {
 
     // Common filters: category + dates
     filteredFiles = filteredFiles.filter(f => {
-      const hasFilter = filterCategory || filterDateFrom || filterDateTo;
-      if (!isAdmin && !hasFilter) return false;
       if (filterCategory && f.category !== filterCategory) return false;
       if (filterDateFrom || filterDateTo) {
         const fileDate = new Date(f.uploadedAt);
@@ -945,9 +948,12 @@ function FileList(props) {
     }
   };
 
-  // Preview file in browser
+  // Preview file in modal
   const handlePreview = async (fileId, name, fileType, version) => {
     setError('');
+    setPreviewLoading(true);
+    setIsPreviewModalOpen(true);
+    
     try {
       const urlPath = API_ENDPOINTS.DOWNLOAD(fileId, version);
       const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
@@ -955,17 +961,52 @@ function FileList(props) {
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
 
-      // Open in new tab for preview
-      window.open(url, '_blank');
-
-      // Clean up after a delay
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-      }, 100);
+      setPreviewFileData({
+        fileId,
+        name,
+        fileType,
+        version,
+        url
+      });
     } catch (err) {
       setError('Preview failed');
+      setIsPreviewModalOpen(false);
+    } finally {
+      setPreviewLoading(false);
     }
   };
+
+  // Close preview modal and clean up blob URL
+  const handleClosePreview = useCallback(() => {
+    if (previewFileData?.url) {
+      window.URL.revokeObjectURL(previewFileData.url);
+    }
+    setIsPreviewModalOpen(false);
+    setPreviewFileData(null);
+    setPreviewLoading(false);
+  }, [previewFileData]);
+
+  // Handle ESC key to close preview modal
+  useEffect(() => {
+    const handleEscKey = (event) => {
+      if (event.key === 'Escape' && isPreviewModalOpen) {
+        handleClosePreview();
+      }
+    };
+    document.addEventListener('keydown', handleEscKey);
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+    };
+  }, [isPreviewModalOpen, handleClosePreview]);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (previewFileData?.url) {
+        window.URL.revokeObjectURL(previewFileData.url);
+      }
+    };
+  }, [previewFileData]);
 
 
   const handleShareFile = async (fileId) => {
@@ -1061,60 +1102,6 @@ function FileList(props) {
     <div style={pageStyle}>
       <div style={container}>
         {/* Professional Loading Overlay */}
-        {loading && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            animation: 'fadeIn 0.3s ease-in-out'
-          }}>
-            <div style={{
-              textAlign: 'center',
-              animation: 'slideUp 0.5s ease-out'
-            }}>
-              <div style={{
-                position: 'relative',
-                width: '120px',
-                height: '120px',
-                margin: '0 auto 24px'
-              }}>
-                <svg style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  transform: 'rotate(-90deg)'
-                }}>
-                  <circle cx="60" cy="60" r="54" fill="none" stroke="#e5e7eb" strokeWidth="6" />
-                  <circle cx="60" cy="60" r="54" fill="none" stroke="url(#gradient-table)" strokeWidth="6" strokeLinecap="round" strokeDasharray="339.292" strokeDashoffset="0" style={{ animation: 'progress 2s ease-in-out infinite' }} />
-                  <defs>
-                    <linearGradient id="gradient-table" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#3b82f6" />
-                      <stop offset="100%" stopColor="#8b5cf6" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '36px', animation: 'pulse 2s ease-in-out infinite' }}>📁</div>
-              </div>
-              <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1f2937', margin: '0 0 8px 0', animation: 'fadeIn 0.5s ease-in-out 0.2s both' }}>Loading Your Files</h3>
-              <p style={{ fontSize: '14px', color: '#6b7280', margin: 0, animation: 'fadeIn 0.5s ease-in-out 0.4s both' }}>Please wait while we fetch your documents...</p>
-              <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                {[0, 1, 2].map((i) => (<div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', animation: `bounce 1.4s ease-in-out ${i * 0.2}s infinite` }} />))}
-              </div>
-            </div>
-            <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } @keyframes progress { 0% { stroke-dashoffset: 339.292; } 50% { stroke-dashoffset: 84.823; } 100% { stroke-dashoffset: 339.292; } } @keyframes pulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; } } @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-12px); } }`}</style>
-          </div>
-        )}
 
         {/* Back button for admin when viewing Teams/Projects context */}
         {userRole === 'admin' && isContextView && (
@@ -1134,21 +1121,79 @@ function FileList(props) {
           </div>
         )}
         {/* Real-time Dashboard Stats */}
-        <div style={statsGrid}>
-          <div style={statCard}>
-            <div style={statTitle}>Total Files</div>
-            <div style={statValue}>{stats.totalFiles}</div>
-            <div style={statSub}>
-              {userRole === 'admin' ? 'All files in system' : 'Your uploaded files'}
+        <div style={{ position: 'relative', minHeight: '120px' }}>
+          {/* Loading Overlay - Only shows over stats */}
+          {loading && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(255, 255, 255, 0.95)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              animation: 'fadeIn 0.3s ease-in-out',
+              borderRadius: '14px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                textAlign: 'center'
+              }}>
+                <div style={{
+                  position: 'relative',
+                  width: '60px',
+                  height: '60px',
+                  margin: '0 auto 8px'
+                }}>
+                  <svg style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    transform: 'rotate(-90deg)'
+                  }}>
+                    <circle cx="30" cy="30" r="26" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                    <circle cx="30" cy="30" r="26" fill="none" stroke="url(#gradient-stats-table)" strokeWidth="3" strokeLinecap="round" strokeDasharray="163.36" strokeDashoffset="0" style={{ animation: 'progress 2s ease-in-out infinite' }} />
+                    <defs>
+                      <linearGradient id="gradient-stats-table" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#8b5cf6" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '24px', animation: 'pulse 2s ease-in-out infinite' }}>📁</div>
+                </div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1f2937', margin: '0 0 4px 0', animation: 'fadeIn 0.5s ease-in-out 0.2s both' }}>Loading Your Files</h3>
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, animation: 'fadeIn 0.5s ease-in-out 0.4s both' }}>Please wait...</p>
+                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                  {[0, 1, 2].map((i) => (<div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', animation: `bounce 1.4s ease-in-out ${i * 0.2}s infinite` }} />))}
+                </div>
+              </div>
+              <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } @keyframes progress { 0% { stroke-dashoffset: 163.36; } 50% { stroke-dashoffset: 40.84; } 100% { stroke-dashoffset: 163.36; } } @keyframes pulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; } } @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }`}</style>
             </div>
-          </div>
-          <div style={statCard}>
-            <div style={statTitle}>Storage Used</div>
-            <div style={statValue}>{stats.storageUsedMB.toFixed(2)} MB</div>
-            <div style={statSub}>
-              {stats.totalFiles > 0
-                ? `${(stats.storageUsedMB / stats.totalFiles).toFixed(2)} MB avg per file`
-                : 'No files yet'}
+          )}
+          <div style={statsGrid}>
+            <div style={statCard}>
+              <div style={statTitle}>Total Files</div>
+              <div style={statValue}>{stats.totalFiles}</div>
+              <div style={statSub}>
+                {userRole === 'admin' ? 'All files in system' : 'Your uploaded files'}
+              </div>
+            </div>
+            <div style={statCard}>
+              <div style={statTitle}>Storage Used</div>
+              <div style={statValue}>{stats.storageUsedMB.toFixed(2)} MB</div>
+              <div style={statSub}>
+                {stats.totalFiles > 0
+                  ? `${(stats.storageUsedMB / stats.totalFiles).toFixed(2)} MB avg per file`
+                  : 'No files yet'}
+              </div>
             </div>
           </div>
         </div>
@@ -1307,20 +1352,66 @@ function FileList(props) {
                 <div>
                   <label style={label}>Compression</label>
                   <select value={compress} onChange={readOnlyMode ? undefined : (e => setCompress(e.target.value))} style={select} disabled={readOnlyMode}>
-                    <option value="none">No Compression</option>
-                    <option value="zip">Zip</option>
-                    <option value="brotli">Brotli</option>
+
+                    <option value="zip">Zip (Fast but less compressed)</option>
+                    <option value="brotli">Brotli (Slow but more compressed)</option>
                   </select>
                 </div>
                 <div>
                   <label style={label}>File Creation Date</label>
-                  <input
-                    type="date"
-                    value={fileCreatedAt}
-                    onChange={readOnlyMode ? undefined : (e => setFileCreatedAt(e.target.value))}
-                    style={input}
-                    disabled={readOnlyMode}
-                  />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: '12px',
+                      fontSize: '16px',
+                      color: '#6b7280',
+                      pointerEvents: 'none',
+                      zIndex: 1
+                    }}>📅</span>
+                    <input
+                      type="date"
+                      value={fileCreatedAt}
+                      onChange={readOnlyMode ? undefined : (e => setFileCreatedAt(e.target.value))}
+                      disabled={readOnlyMode}
+                      style={{
+                        ...input,
+                        paddingLeft: '40px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        border: '2px solid #e5e7eb',
+                        borderRadius: '8px',
+                        transition: 'all 0.2s ease',
+                        outline: 'none',
+                        cursor: readOnlyMode ? 'not-allowed' : 'pointer',
+                        letterSpacing: '0.01em',
+                        lineHeight: '1.5',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                      }}
+                      onFocus={(e) => {
+                        if (!readOnlyMode) {
+                          e.target.style.borderColor = '#3b82f6';
+                          e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                        }
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#e5e7eb';
+                        e.target.style.boxShadow = 'none';
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!readOnlyMode && document.activeElement !== e.target) {
+                          e.target.style.borderColor = '#d1d5db';
+                          e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!readOnlyMode && document.activeElement !== e.target) {
+                          e.target.style.borderColor = '#e5e7eb';
+                          e.target.style.boxShadow = 'none';
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
                 <div>
                   <button
@@ -1414,21 +1505,109 @@ function FileList(props) {
               </div>
               <div>
                 <label style={label}>Date From</label>
-                <input
-                  type="date"
-                  value={filterDateFrom}
-                  onChange={e => setFilterDateFrom(e.target.value)}
-                  style={input}
-                />
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: '12px',
+                    fontSize: '16px',
+                    color: '#6b7280',
+                    pointerEvents: 'none',
+                    zIndex: 1
+                  }}>📅</span>
+                  <input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={e => setFilterDateFrom(e.target.value)}
+                    style={{
+                      ...input,
+                      paddingLeft: '40px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#1f2937',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      transition: 'all 0.2s ease',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      letterSpacing: '0.01em',
+                      lineHeight: '1.5',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e5e7eb';
+                      e.target.style.boxShadow = 'none';
+                    }}
+                    onMouseEnter={(e) => {
+                      if (document.activeElement !== e.target) {
+                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (document.activeElement !== e.target) {
+                        e.target.style.borderColor = '#e5e7eb';
+                        e.target.style.boxShadow = 'none';
+                      }
+                    }}
+                  />
+                </div>
               </div>
               <div>
                 <label style={label}>Date To</label>
-                <input
-                  type="date"
-                  value={filterDateTo}
-                  onChange={e => setFilterDateTo(e.target.value)}
-                  style={input}
-                />
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: '12px',
+                    fontSize: '16px',
+                    color: '#6b7280',
+                    pointerEvents: 'none',
+                    zIndex: 1
+                  }}>📅</span>
+                  <input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={e => setFilterDateTo(e.target.value)}
+                    style={{
+                      ...input,
+                      paddingLeft: '40px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#1f2937',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      transition: 'all 0.2s ease',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      letterSpacing: '0.01em',
+                      lineHeight: '1.5',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e5e7eb';
+                      e.target.style.boxShadow = 'none';
+                    }}
+                    onMouseEnter={(e) => {
+                      if (document.activeElement !== e.target) {
+                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (document.activeElement !== e.target) {
+                        e.target.style.borderColor = '#e5e7eb';
+                        e.target.style.boxShadow = 'none';
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
             {(filterCategory || filterDateFrom || filterDateTo) && (
@@ -1710,6 +1889,360 @@ function FileList(props) {
           <span>{error}</span>
         </div>
       )}
+
+      {/* ✅ FILE PREVIEW MODAL */}
+      {isPreviewModalOpen && (
+        <div 
+          className="preview-modal-overlay"
+          onClick={handleClosePreview}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.95)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div 
+            className="preview-modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              maxWidth: '95vw',
+              maxHeight: '95vh',
+              width: '100%',
+              background: '#1a1a1a',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              background: '#252525',
+              borderBottom: '1px solid #333',
+              flexShrink: 0
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{
+                  margin: 0,
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  color: '#fff',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {previewFileData?.name || 'Preview'}
+                  {previewFileData?.fileType && (
+                    <span style={{ color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
+                      .{previewFileData.fileType}
+                    </span>
+                  )}
+                </h3>
+              </div>
+              <button
+                onClick={handleClosePreview}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
+                  marginLeft: '16px',
+                  width: '32px',
+                  height: '32px'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#3a3a3a'}
+                onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                title="Close (Esc)"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Preview Content */}
+            <div style={{
+              flex: 1,
+              overflow: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              background: '#1a1a1a',
+              position: 'relative',
+              minHeight: '400px'
+            }}>
+              {previewLoading ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff'
+                }}>
+                  <div style={{
+                    width: '50px',
+                    height: '50px',
+                    border: '4px solid #333',
+                    borderTopColor: '#3b82f6',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    marginBottom: '16px'
+                  }}></div>
+                  <p style={{ margin: 0, color: '#9ca3af' }}>Loading preview...</p>
+                </div>
+              ) : previewFileData?.url ? (
+                (() => {
+                  const fileType = previewFileData.fileType?.toLowerCase();
+                  
+                  // PDF Preview
+                  if (fileType === 'pdf') {
+                    return (
+                      <iframe
+                        src={previewFileData.url}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          minHeight: '600px',
+                          border: 'none',
+                          background: '#2a2a2a'
+                        }}
+                        title={`Preview of ${previewFileData.name}`}
+                      />
+                    );
+                  }
+                  
+                  // Image Preview
+                  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(fileType)) {
+                    return (
+                      <img
+                        src={previewFileData.url}
+                        alt={previewFileData.name}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain',
+                          borderRadius: '8px',
+                          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                        }}
+                      />
+                    );
+                  }
+                  
+                  // Text files
+                  if (['txt', 'json', 'xml', 'csv', 'md', 'js', 'jsx', 'ts', 'tsx', 'css', 'html'].includes(fileType)) {
+                    return (
+                      <iframe
+                        src={previewFileData.url}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          minHeight: '400px',
+                          border: 'none',
+                          background: '#1a1a1a',
+                          color: '#fff'
+                        }}
+                        title={`Preview of ${previewFileData.name}`}
+                      />
+                    );
+                  }
+                  
+                  // Video files
+                  if (['mp4', 'webm', 'ogg', 'mov'].includes(fileType)) {
+                    return (
+                      <video
+                        src={previewFileData.url}
+                        controls
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        Your browser does not support video playback.
+                      </video>
+                    );
+                  }
+                  
+                  // Audio files
+                  if (['mp3', 'wav', 'ogg', 'm4a'].includes(fileType)) {
+                    return (
+                      <div style={{
+                        width: '100%',
+                        maxWidth: '600px',
+                        padding: '40px',
+                        background: '#252525',
+                        borderRadius: '12px',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{
+                          fontSize: '48px',
+                          marginBottom: '24px'
+                        }}>🎵</div>
+                        <h4 style={{ color: '#fff', marginBottom: '16px' }}>
+                          {previewFileData.name}
+                        </h4>
+                        <audio
+                          src={previewFileData.url}
+                          controls
+                          style={{
+                            width: '100%',
+                            marginBottom: '16px'
+                          }}
+                        >
+                          Your browser does not support audio playback.
+                        </audio>
+                        <button
+                          onClick={() => handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version)}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#3b82f6',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            fontSize: '14px'
+                          }}
+                        >
+                          Download File
+                        </button>
+                      </div>
+                    );
+                  }
+                  
+                  // Unsupported file types - show download option
+                  return (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '60px 40px',
+                      color: '#fff'
+                    }}>
+                      <div style={{
+                        fontSize: '64px',
+                        marginBottom: '24px'
+                      }}>📄</div>
+                      <h3 style={{
+                        color: '#fff',
+                        marginBottom: '12px',
+                        fontSize: '20px'
+                      }}>
+                        Preview not available
+                      </h3>
+                      <p style={{
+                        color: '#9ca3af',
+                        marginBottom: '24px',
+                        fontSize: '14px'
+                      }}>
+                        This file type cannot be previewed in the browser.
+                      </p>
+                      <button
+                        onClick={() => {
+                          handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version);
+                          handleClosePreview();
+                        }}
+                        style={{
+                          padding: '12px 24px',
+                          background: '#3b82f6',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '15px',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.target.style.background = '#2563eb'}
+                        onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
+                      >
+                        Download File
+                      </button>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div style={{
+                  textAlign: 'center',
+                  color: '#9ca3af'
+                }}>
+                  <p>No preview available</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            {previewFileData && !previewLoading && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '12px',
+                padding: '16px 20px',
+                background: '#252525',
+                borderTop: '1px solid #333',
+                flexShrink: 0
+              }}>
+                <button
+                  onClick={() => {
+                    handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version);
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#3b82f6',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    transition: 'background 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                  onMouseEnter={(e) => e.target.style.background = '#2563eb'}
+                  onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
+                >
+                  <span>⬇️</span>
+                  <span>Download</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add CSS animations */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

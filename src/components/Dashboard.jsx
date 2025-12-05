@@ -9,8 +9,12 @@ function Dashboard() {
   const role = localStorage.getItem('role') || ''
   const department = localStorage.getItem('department') || ''
 
+  // Keep this synced with the navbar height so fixed controls stay visible.
+  const NAVBAR_HEIGHT = 80
+  const VIEW_TOGGLE_SPACING = 16
+
   // View mode: 'table' or 'grid'
-  const [viewMode, setViewMode] = useState('grid') // Default to grid view
+  const [viewMode, setViewMode] = useState('table') // Default to table view
 
   if (!isAuthed) {
     return <Navigate to="/login" replace />
@@ -21,7 +25,7 @@ function Dashboard() {
       {/* View Mode Toggle */}
       <div style={{
         position: 'fixed',
-        top: 80,
+        top: NAVBAR_HEIGHT + VIEW_TOGGLE_SPACING,
         right: 20,
         zIndex: 100,
         background: 'white',
