@@ -22,6 +22,15 @@ const {
   createGCSWriteStream
 } = require('./services/gcs');
 
+// Semantic Search Service
+const {
+  indexDocument,
+  searchDocuments,
+  removeDocument,
+  getIndexStats,
+  initializeSemanticSearch
+} = require('./services/semanticSearch');
+
 const app = express();
 app.disable('x-powered-by');
 
@@ -905,6 +914,41 @@ app.post('/api/files/upload', auth, async (req, res) => {
       };
 
       await saveMeta(meta);
+
+      // Automatically index document for semantic search (async, don't block response)
+      setImmediate(async () => {
+        try {
+          const { isSupportedFileType } = require('./services/documentProcessor');
+          if (isSupportedFileType(originalname)) {
+            console.log(`[Auto-Index] Starting background indexing for ${originalname}`);
+
+            // Download file from GCS for indexing
+            const readStream = getGCSDownloadStream(gcsObjectKey);
+            const chunks = [];
+
+            for await (const chunk of readStream) {
+              chunks.push(chunk);
+            }
+
+            const fileBuffer = Buffer.concat(chunks);
+
+            // Index the document
+            await indexDocument(fileBuffer, {
+              fileId: uploadId,
+              filename: originalname,
+              ownerUserId,
+              category,
+              department: req.user.department
+            });
+
+            console.log(`[Auto-Index] Successfully indexed ${originalname}`);
+          }
+        } catch (indexError) {
+          console.error(`[Auto-Index] Failed to index ${originalname}:`, indexError.message);
+          // Don't fail the upload if indexing fails
+        }
+      });
+
       res.json({ message: 'Upload complete', fileId: uploadId, version, category, size, fileName: clearBoardFileName });
     };
 
@@ -1074,6 +1118,16 @@ app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
 
     // 3. Save the updated metadata
     await saveMeta(meta);
+
+    // 4. Remove from semantic search index (async, don't block response)
+    setImmediate(async () => {
+      try {
+        await removeDocument(fileId);
+        console.log(`[Auto-Index] Removed ${fileId} from search index`);
+      } catch (indexError) {
+        console.error(`[Auto-Index] Failed to remove ${fileId} from index:`, indexError.message);
+      }
+    });
 
     console.log(`File deleted successfully: ${fileId} by user ${req.user.userId}`);
     res.status(200).json({ message: 'File deleted successfully' });
@@ -1383,6 +1437,194 @@ app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
   }
 });
 
+// ========================================
+// SEMANTIC SEARCH ENDPOINTS
+// ========================================
+
+/**
+ * Search documents using semantic similarity
+ * POST /api/search
+ * Body: { query: string, topK?: number, filter?: object }
+ */
+app.post('/api/search', auth, async (req, res) => {
+  try {
+    const { query, topK = 10, filter } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ message: 'Query is required' });
+    }
+
+    console.log(`[Search API] User ${req.user.userId} searching for: "${query}"`);
+
+    // Perform semantic search
+    const searchResult = await searchDocuments(query, {
+      topK,
+      filter,
+      minScore: 0.3
+    });
+
+    if (!searchResult.success) {
+      return res.status(500).json({
+        message: 'Search failed',
+        error: searchResult.error
+      });
+    }
+
+    // Load metadata to enrich results with full file info
+    const meta = await loadMeta();
+
+    // Enrich results with file metadata and authorization
+    const enrichedResults = searchResult.results
+      .map(result => {
+        const file = meta[result.fileId];
+        if (!file) return null;
+
+        // Check authorization
+        const hasAccess = req.user.role === 'admin' ||
+          file.ownerId === req.user.id ||
+          (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
+
+        if (!hasAccess) return null;
+
+        return {
+          fileId: result.fileId,
+          filename: result.filename,
+          displayName: file.displayName || file.baseName,
+          category: result.category,
+          ownerUserId: result.ownerUserId,
+          department: result.department,
+          score: result.maxScore,
+          snippet: result.snippet,
+          matchCount: result.matchCount,
+          uploadedAt: file.uploadedAt,
+          size: file.size,
+          mimetype: file.mimetype
+        };
+      })
+      .filter(result => result !== null);
+
+    res.json({
+      success: true,
+      query,
+      results: enrichedResults,
+      totalResults: enrichedResults.length,
+      searchTime: Date.now() - searchResult.searchTime
+    });
+
+  } catch (err) {
+    console.error('[Search API] Error:', err);
+    res.status(500).json({
+      message: 'Search failed',
+      error: err.message
+    });
+  }
+});
+
+/**
+ * Manually index a document for semantic search
+ * POST /api/search/index/:fileId
+ */
+app.post('/api/search/index/:fileId', auth, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const meta = await loadMeta();
+    const file = meta[fileId];
+
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    // Only owner or admin can index
+    if (req.user.role !== 'admin' && file.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    console.log(`[Search API] Manually indexing file: ${file.originalname} (${fileId})`);
+
+    // Download file from GCS
+    const readStream = getGCSDownloadStream(file.gcsObjectKey);
+    const chunks = [];
+
+    for await (const chunk of readStream) {
+      chunks.push(chunk);
+    }
+
+    const fileBuffer = Buffer.concat(chunks);
+
+    // Index the document
+    const indexResult = await indexDocument(fileBuffer, {
+      fileId,
+      filename: file.originalname,
+      ownerUserId: file.ownerUserId,
+      category: file.category,
+      department: req.user.department
+    });
+
+    res.json(indexResult);
+
+  } catch (err) {
+    console.error('[Search API] Index error:', err);
+    res.status(500).json({
+      message: 'Indexing failed',
+      error: err.message
+    });
+  }
+});
+
+/**
+ * Remove document from search index
+ * DELETE /api/search/index/:fileId
+ */
+app.delete('/api/search/index/:fileId', auth, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const meta = await loadMeta();
+    const file = meta[fileId];
+
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    // Only owner or admin can remove from index
+    if (req.user.role !== 'admin' && file.ownerId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const removeResult = await removeDocument(fileId);
+    res.json(removeResult);
+
+  } catch (err) {
+    console.error('[Search API] Remove from index error:', err);
+    res.status(500).json({
+      message: 'Failed to remove from index',
+      error: err.message
+    });
+  }
+});
+
+/**
+ * Get search index statistics
+ * GET /api/search/stats
+ */
+app.get('/api/search/stats', auth, async (req, res) => {
+  try {
+    // Only admin can view stats
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const stats = await getIndexStats();
+    res.json(stats);
+
+  } catch (err) {
+    console.error('[Search API] Stats error:', err);
+    res.status(500).json({
+      message: 'Failed to get stats',
+      error: err.message
+    });
+  }
+});
+
 // Global error handler — ensure CORS headers are present on errors for allowed origins
 app.use((err, req, res, next) => {
   try {
@@ -1401,10 +1643,20 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Temp uploads directory: ${UPLOADS_DIR}`);
   console.log(`Metadata stored in GCS: ${META_GCS_KEY}`);
   console.log(`Users stored in GCS: ${USERS_GCS_KEY}`);
   console.log('System is fully cloud-based');
+
+  // Initialize semantic search service
+  try {
+    console.log('Initializing semantic search service...');
+    await initializeSemanticSearch();
+    console.log('✓ Semantic search service ready');
+  } catch (error) {
+    console.error('⚠ Semantic search initialization failed:', error.message);
+    console.error('  Search functionality will be limited');
+  }
 });

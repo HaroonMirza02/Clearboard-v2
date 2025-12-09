@@ -7,6 +7,7 @@ import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 import '../styles/Calendar.css'; // Professional calendar picker styling
 import AdminUserFilter from './AdminUserFilter';
+import SemanticSearchBar from './SemanticSearchBar'; // ✅ NEW: Semantic search component
 
 const TEAM_CATEGORIES = {
   'Software Development': ['WebDev Assets', 'General Research', 'Project Demo', 'Source Code'],
@@ -420,6 +421,10 @@ function FileList(props) {
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
 
+  // ✅ NEW: Semantic search states
+  const [semanticSearchResults, setSemanticSearchResults] = useState([]);
+  const [isSemanticSearchActive, setIsSemanticSearchActive] = useState(false);
+
   // Upload validation and progress states
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -731,8 +736,59 @@ function FileList(props) {
     };
   }, []);
 
+  // ✅ NEW: Handle semantic search results
+  const handleSemanticSearchResults = useCallback((results) => {
+    if (results && results.length > 0) {
+      setSemanticSearchResults(results);
+      setIsSemanticSearchActive(true);
+    } else {
+      setSemanticSearchResults([]);
+      setIsSemanticSearchActive(false);
+    }
+  }, []);
+
+  // ✅ NEW: Handle semantic search result click
+  const handleSemanticResultClick = useCallback((result) => {
+    // Download the file when clicked
+    handleDownload(result.fileId, result.filename, null, null);
+  }, []);
+
   const filteredFiles = React.useMemo(() => {
     const isAdmin = userRole === 'admin';
+
+    // ✅ NEW: If semantic search is active, convert results to file format
+    if (isSemanticSearchActive && semanticSearchResults.length > 0) {
+      // Map semantic search results to file format
+      return semanticSearchResults.map(result => {
+        // Find the full file object from files array
+        const fullFile = files.find(f => f.id === result.fileId ||
+          f.versions?.some(v => v.id === result.fileId));
+
+        if (fullFile) {
+          return fullFile;
+        }
+
+        // If not found, create a minimal file object from search result
+        return {
+          id: result.fileId,
+          name: result.displayName || result.filename,
+          category: result.category,
+          ownerUserId: result.ownerUserId,
+          uploadedAt: result.uploadedAt,
+          size: result.size,
+          mimetype: result.mimetype,
+          versions: [{
+            id: result.fileId,
+            version: 1,
+            size: result.size,
+            uploadedAt: result.uploadedAt
+          }],
+          // Add semantic search metadata
+          _semanticScore: result.score,
+          _semanticSnippet: result.snippet
+        };
+      });
+    }
 
     // Start from all files
     let filteredFiles = files;
@@ -782,7 +838,7 @@ function FileList(props) {
     // Map the results from Fuse.js back to the original file format
     return results.map(result => result.item);
 
-  }, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery, adminOwnerFilter, adminFilterMode, adminProjectFilter, userRole]);
+  }, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery, adminOwnerFilter, adminFilterMode, adminProjectFilter, userRole, isSemanticSearchActive, semanticSearchResults]);
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
   // Get unique owners from files for admin owner filter
@@ -953,7 +1009,7 @@ function FileList(props) {
     setError('');
     setPreviewLoading(true);
     setIsPreviewModalOpen(true);
-    
+
     try {
       const urlPath = API_ENDPOINTS.DOWNLOAD(fileId, version);
       const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
@@ -1628,8 +1684,33 @@ function FileList(props) {
               </div>
             )}
           </div>
-          {/* ✨ NEW MODERN SEARCH BAR ✨ */}
-          <div style={{ position: 'relative', maxWidth: '320px', width: '100%' }}>
+          {/* ✨ SEMANTIC SEARCH BAR ✨ */}
+          <div style={{ marginTop: 16 }}>
+            <SemanticSearchBar
+              onResults={handleSemanticSearchResults}
+              onResultClick={handleSemanticResultClick}
+              placeholder="Search documents by content (semantic search)..."
+              showDropdown={true}
+            />
+          </div>
+          {isSemanticSearchActive && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 14, color: '#4f46e5', fontWeight: 600 }}>
+                🔍 Showing {semanticSearchResults.length} semantic search {semanticSearchResults.length === 1 ? 'result' : 'results'}
+              </span>
+              <button
+                onClick={() => {
+                  setSemanticSearchResults([]);
+                  setIsSemanticSearchActive(false);
+                }}
+                style={{ ...toggleBtn, marginTop: 0, fontSize: 13, color: '#4f46e5' }}
+              >
+                Clear Search
+              </button>
+            </div>
+          )}
+          {/* ✨ LEGACY SEARCH BAR (for filename search) ✨ */}
+          <div style={{ position: 'relative', maxWidth: '320px', width: '100%', marginTop: 12 }}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="18"
@@ -1654,11 +1735,10 @@ function FileList(props) {
             </svg>
             <input
               type="text"
-              placeholder="Search filtered files..."
+              placeholder="Search by filename..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
-                marginTop: 12,
                 ...input, // Inherits your base input style
                 height: '40px',
                 paddingLeft: '38px', // Make space for the icon
@@ -1892,7 +1972,7 @@ function FileList(props) {
 
       {/* ✅ FILE PREVIEW MODAL */}
       {isPreviewModalOpen && (
-        <div 
+        <div
           className="preview-modal-overlay"
           onClick={handleClosePreview}
           style={{
@@ -1910,7 +1990,7 @@ function FileList(props) {
             animation: 'fadeIn 0.2s ease-out'
           }}
         >
-          <div 
+          <div
             className="preview-modal-content"
             onClick={e => e.stopPropagation()}
             style={{
@@ -2014,7 +2094,7 @@ function FileList(props) {
               ) : previewFileData?.url ? (
                 (() => {
                   const fileType = previewFileData.fileType?.toLowerCase();
-                  
+
                   // PDF Preview
                   if (fileType === 'pdf') {
                     return (
@@ -2031,7 +2111,7 @@ function FileList(props) {
                       />
                     );
                   }
-                  
+
                   // Image Preview
                   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(fileType)) {
                     return (
@@ -2048,7 +2128,7 @@ function FileList(props) {
                       />
                     );
                   }
-                  
+
                   // Text files
                   if (['txt', 'json', 'xml', 'csv', 'md', 'js', 'jsx', 'ts', 'tsx', 'css', 'html'].includes(fileType)) {
                     return (
@@ -2066,7 +2146,7 @@ function FileList(props) {
                       />
                     );
                   }
-                  
+
                   // Video files
                   if (['mp4', 'webm', 'ogg', 'mov'].includes(fileType)) {
                     return (
@@ -2083,7 +2163,7 @@ function FileList(props) {
                       </video>
                     );
                   }
-                  
+
                   // Audio files
                   if (['mp3', 'wav', 'ogg', 'm4a'].includes(fileType)) {
                     return (
@@ -2130,7 +2210,7 @@ function FileList(props) {
                       </div>
                     );
                   }
-                  
+
                   // Unsupported file types - show download option
                   return (
                     <div style={{
