@@ -1,0 +1,107 @@
+Slide 1: Introduction to Semantic Search
+==========================================
+
+Welcome to Semantic Search
+- Understand meaning, not just keywords
+- Find relevant documents faster
+- Powered by AI embeddings
+
+
+Slide 2: How It Works
+=====================
+
+Document Processing
+1. Upload your files (PDF, DOCX, TXT, PPT)
+2. Text is extracted automatically
+3. AI generates semantic embeddings
+4. Stored in vector database
+
+
+Slide 3: Search Features
+========================
+
+Intelligent Search
+- Natural language queries
+- Category-based filtering
+- Real-time results
+- Relevance scoring
+- Snippet previews
+
+
+Slide 4: Supported File Types
+==============================
+
+We Support:
+✓ PDF Documents
+✓ Word Documents (DOCX)
+✓ Text Files (TXT)
+✓ PowerPoint Presentations (PPT/PPTX)
+
+All indexed automatically on upload!
+
+
+Slide 5: Benefits
+=================
+
+Why Use Semantic Search?
+- Save time finding documents
+- Discover related content
+- No need to remember exact keywords
+- Works across all your files
+- Free and self-hosted
+
+
+Slide 6: Getting Started
+========================
+
+Quick Start:
+1. Select a category
+2. Upload your documents
+3. Wait for auto-indexing
+4. Start searching!
+
+It's that simple!
+
+
+Slide 7: Advanced Features
+===========================
+
+Power User Tips:
+- Use natural language queries
+- Combine with date filters
+- Filter by category first
+- Check relevance scores
+- Download directly from results
+
+
+Slide 8: Technical Details
+===========================
+
+Under the Hood:
+- AI Model: all-MiniLM-L6-v2
+- Vector Dimensions: 384
+- Chunk Size: 500 words
+- Search Time: <100ms
+- 100% Free & Open Source
+
+
+Slide 9: Future Roadmap
+========================
+
+Coming Soon:
+- Image search with OCR
+- Visual similarity search
+- Multi-language support
+- Advanced filters
+- Search analytics
+
+
+Slide 10: Thank You!
+====================
+
+Questions?
+- Check the documentation
+- Test with your own files
+- Enjoy semantic search!
+
+Happy searching! 🚀

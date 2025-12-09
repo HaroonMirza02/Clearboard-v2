@@ -14,7 +14,8 @@ const SemanticSearchBar = ({
     onResults,  // NEW: Callback to send results to parent
     placeholder = "Search documents by content...",
     showDropdown = true,  // NEW: Control whether to show dropdown
-    apiUrl = null  // NEW: Optional API URL override
+    apiUrl = null,  // NEW: Optional API URL override
+    category = null  // NEW: Filter results by category
 }) => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
@@ -70,16 +71,23 @@ const SemanticSearchBar = ({
             console.log('[SemanticSearch] Searching for:', searchQuery);
             console.log('[SemanticSearch] API URL:', searchUrl);
 
+            const requestBody = {
+                query: searchQuery,
+                topK: 10
+            };
+
+            // Add category filter if provided
+            if (category) {
+                requestBody.category = category;
+            }
+
             const response = await fetch(searchUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    query: searchQuery,
-                    topK: 10
-                }),
+                body: JSON.stringify(requestBody),
                 signal: abortControllerRef.current.signal
             });
 

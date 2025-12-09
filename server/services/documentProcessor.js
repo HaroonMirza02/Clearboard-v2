@@ -1,6 +1,6 @@
 /**
  * Document Processing Service
- * Extracts text content from various file formats (PDF, DOCX, TXT)
+ * Extracts text content from various file formats (PDF, DOCX, TXT, PPT/PPTX)
  * and splits large documents into manageable chunks for embedding generation
  */
 
@@ -8,6 +8,14 @@ const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 const fs = require('fs').promises;
 const path = require('path');
+
+// PowerPoint parser
+let officeParser;
+try {
+    officeParser = require('officeparser');
+} catch (err) {
+    console.warn('officeparser not installed, PPT support disabled');
+}
 
 /**
  * Extract text from PDF file
@@ -54,6 +62,48 @@ async function extractTextFromTXT(buffer) {
 }
 
 /**
+ * Extract text from PowerPoint file (PPT/PPTX)
+ * @param {Buffer} buffer - File buffer
+ * @returns {Promise<string>} Extracted text from all slides
+ */
+async function extractTextFromPPT(buffer) {
+    try {
+        if (!officeParser) {
+            throw new Error('officeparser not available');
+        }
+
+        // Write buffer to temp file (officeparser requires file path)
+        const tempDir = path.join(__dirname, '../temp');
+        await fs.mkdir(tempDir, { recursive: true });
+
+        const tempFile = path.join(tempDir, `temp_${Date.now()}.pptx`);
+        await fs.writeFile(tempFile, buffer);
+
+        try {
+            // Parse the PPTX file using officeparser
+            const text = await officeParser.parseOfficeAsync(tempFile);
+
+            // Clean up temp file
+            await fs.unlink(tempFile).catch(() => { });
+
+            if (!text || text.trim().length === 0) {
+                return 'No text content found in PowerPoint';
+            }
+
+            return text.trim();
+        } catch (parseError) {
+            // Clean up temp file on error
+            await fs.unlink(tempFile).catch(() => { });
+            console.error('PowerPoint parsing error:', parseError);
+            throw parseError;
+        }
+    } catch (error) {
+        console.error('Error extracting text from PPT:', error);
+        throw new Error('Failed to extract text from PowerPoint');
+    }
+}
+
+/**
  * Extract text from file based on extension
  * @param {Buffer} buffer - File buffer
  * @param {string} filename - Original filename
@@ -70,6 +120,9 @@ async function extractText(buffer, filename) {
             return await extractTextFromDOCX(buffer);
         case '.txt':
             return await extractTextFromTXT(buffer);
+        case '.ppt':
+        case '.pptx':
+            return await extractTextFromPPT(buffer);
         default:
             throw new Error(`Unsupported file format: ${ext}`);
     }
@@ -158,7 +211,7 @@ async function processDocument(buffer, filename, options = {}) {
  */
 function isSupportedFileType(filename) {
     const ext = path.extname(filename).toLowerCase();
-    return ['.pdf', '.docx', '.doc', '.txt'].includes(ext);
+    return ['.pdf', '.docx', '.doc', '.txt', '.ppt', '.pptx'].includes(ext);
 }
 
 module.exports = {
@@ -166,6 +219,7 @@ module.exports = {
     extractTextFromPDF,
     extractTextFromDOCX,
     extractTextFromTXT,
+    extractTextFromPPT,
     splitIntoChunks,
     processDocument,
     isSupportedFileType

@@ -1448,7 +1448,7 @@ app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
  */
 app.post('/api/search', auth, async (req, res) => {
   try {
-    const { query, topK = 10, filter } = req.body;
+    const { query, topK = 10, filter, category } = req.body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return res.status(400).json({ message: 'Query is required' });
@@ -1485,6 +1485,11 @@ app.post('/api/search', auth, async (req, res) => {
           (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
 
         if (!hasAccess) return null;
+
+        // NEW: Filter by category if provided
+        if (category && file.category !== category) {
+          return null;
+        }
 
         return {
           fileId: result.fileId,
