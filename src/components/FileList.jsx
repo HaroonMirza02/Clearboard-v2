@@ -1409,8 +1409,8 @@ function FileList(props) {
                   <label style={label}>Compression</label>
                   <select value={compress} onChange={readOnlyMode ? undefined : (e => setCompress(e.target.value))} style={select} disabled={readOnlyMode}>
 
-                    <option value="zip">Zip (Fast but less compressed)</option>
-                    <option value="brotli">Brotli (Slow but more compressed)</option>
+                    <option value="zip">Zip (Fast, less compressed)</option>
+                    <option value="brotli">Brotli (Slow, more compressed)</option>
                   </select>
                 </div>
                 <div>

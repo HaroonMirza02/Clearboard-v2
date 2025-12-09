@@ -16,6 +16,7 @@
     "lucide-react": "^0.544.0",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
+    "pdfjs-dist": "^5.4.449",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-google-recaptcha": "^3.1.0",
