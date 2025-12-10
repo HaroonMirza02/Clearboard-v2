@@ -66,7 +66,7 @@ const smallBtn = { padding: '12px 18px', borderRadius: 10, background: '#2563eb'
 const statsGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 30 };
 const statCard = { ...sectionCard, padding: 24 };
 const statTitle = { fontSize: 14, color: '#64748b', fontWeight: 600, marginBottom: 8 };
-const statValue = { fontSize: 32, fontWeight: 800, color: '#1f2a37', marginBottom: 4 };
+const statValue = { fontSize: 32, fontWeight: 500, color: '#1f2a37', marginBottom: 4 };
 const statSub = { fontSize: 13, color: '#10b981' };
 
 const tableWrap = { ...sectionCard, padding: 0 };
@@ -229,6 +229,8 @@ function FileList(props) {
     newFile: null,
     fileCreatedAt: '',
   });
+  const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [downloadLinkSending, setDownloadLinkSending] = useState(false);
   const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
 
     if (!stats.storageUsedMB) {
@@ -385,6 +387,62 @@ function FileList(props) {
       handleCloseModals();
     } catch (err) {
       alert(err.message || 'An error occurred while updating the UI.');
+    }
+  };
+
+  // Toggle file selection
+  const toggleFileSelection = (fileId) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select/Deselect all files
+  const toggleSelectAll = () => {
+    if (selectedFiles.size === filteredFiles.length) {
+      setSelectedFiles(new Set());
+    } else {
+      setSelectedFiles(new Set(filteredFiles.map(f => f.id)));
+    }
+  };
+
+  // Send download link(s) to email
+  const handleSendDownloadLink = async (fileIds) => {
+    if (!fileIds || fileIds.length === 0) {
+      alert('Please select at least one file');
+      return;
+    }
+
+    setDownloadLinkSending(true);
+    try {
+      const res = await fetch(API_ENDPOINTS.SEND_DOWNLOAD_LINK, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ fileIds })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to send download link');
+      }
+
+      alert(data.message);
+      setSelectedFiles(new Set()); // Clear selection
+      setOpenActionMenuId(null); // Close menu
+    } catch (err) {
+      alert(err.message || 'Failed to send download link');
+    } finally {
+      setDownloadLinkSending(false);
     }
   };
 
@@ -1883,6 +1941,54 @@ function FileList(props) {
             </div>
           )
         }
+        {
+          selectedFiles.size > 0 && (
+            <div style={{
+              padding: '16px',
+              background: '#eff6ff',
+              borderRadius: '10px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span style={{ fontWeight: 600, color: '#1e40af' }}>
+                {selectedFiles.size} file(s) selected
+              </span>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setSelectedFiles(new Set())}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#fff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  onClick={() => handleSendDownloadLink(Array.from(selectedFiles))}
+                  disabled={downloadLinkSending}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: downloadLinkSending ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    opacity: downloadLinkSending ? 0.6 : 1
+                  }}
+                >
+                  📧 {downloadLinkSending ? 'Sending...' : 'Send Download Links to Email'}
+                </button>
+              </div>
+            </div>
+          )
+        }
 
 
         {/* Files Table */}
@@ -1890,6 +1996,15 @@ function FileList(props) {
           <table style={tableStyle}>
             <thead>
               <tr>
+                <th style={thStyle}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer' }}
+                    title="Select all files"
+                  />
+                </th>
                 <th style={thStyle}>File Name</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Size (KB)</th>
@@ -1907,7 +2022,7 @@ function FileList(props) {
               {/* First, check if filteredFiles is empty to show the message */}
               {filteredFiles.length === 0 && (
                 <tr>
-                  <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 11 : 10}>
+                  <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 12 : 11}>
                     <div style={{ fontSize: 48, marginBottom: 8 }}>
                       {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
                     </div>
@@ -1930,6 +2045,14 @@ function FileList(props) {
 
                 return (
                   <tr key={fileGroup.id} style={zebra(idx)}>
+                    <td style={tdStyle}>
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles.has(displayedVersion.id)}
+                        onChange={() => toggleFileSelection(displayedVersion.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span
@@ -1987,7 +2110,13 @@ function FileList(props) {
                         {openActionMenuId === fileGroup.id && (
                           <div className="actions-dropdown">
                             <button className="actions-item" onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}>👁️ Preview</button>
-                            <button className="actions-item" onClick={() => handleDownload(displayedVersion.id, fileGroup.name, displayedVersion.fileType)}>⬇️ Download</button>
+                            <button
+                              className="actions-item"
+                              onClick={() => handleSendDownloadLink([displayedVersion.id])}
+                              disabled={downloadLinkSending}
+                            >
+                              📧 {downloadLinkSending ? 'Sending...' : 'Send Download Link'}
+                            </button>
                             {/* {!readOnlyMode && fileGroup.isOwner && (
                               fileGroup.isShared ?
                                 <button className="actions-item" onClick={() => handleUnshareFile(displayedVersion.id)}>Unshare</button>

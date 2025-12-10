@@ -42,6 +42,10 @@ export const API_ENDPOINTS = {
   UNSHARE_FILE: (fileId) => `${API_BASE_URL}/api/files/unshare/${fileId}`,
   // Users endpoint
   USERS_BY_DEPARTMENT: (dept) => `${API_BASE_URL}/api/users/by-department?dept=${dept}`,
+  // Download link endpoints
+  SEND_DOWNLOAD_LINK: `${API_BASE_URL}/api/files/send-download-link`,
+  DOWNLOAD_WITH_TOKEN: (token) => `${API_BASE_URL}/api/files/download-with-token/${token}`,
+  DOWNLOAD_ALL_WITH_TOKEN: (token) => `${API_BASE_URL}/api/files/download-all-with-token/${token}`,
 };
 
 export default API_BASE_URL;

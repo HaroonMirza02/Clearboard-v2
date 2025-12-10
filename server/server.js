@@ -92,7 +92,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 const HARDCODED_USERS = [
   { userId: 'HaroonMirza', email: 'haroon.mirza040602@gmail.com', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
   { userId: 'IbrahimMalik', password: 'password123', id: 'user-2', role: 'user', department: 'Software Development' },
-  { userId: 'ZaidBinAsim', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
+  { userId: 'ZaidBinAsim', email: 'zaidbinasim2197@gmail.com', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
   { userId: 'MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user', department: 'Business Development' },
   { userId: 'CB_CEO_AliZakaria_01', password: 'admin123', id: 'admin-1', role: 'admin', department: 'Admin' }
 ];
@@ -103,6 +103,12 @@ const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST || '';
 const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER || process.env.EMAIL_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
+
+// Frontend URL - auto-detect based on environment
+const FRONTEND_URL = process.env.FRONTEND_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://fifth-flame-472409-q0.web.app'
+    : 'http://localhost:5173');
 
 // Simple in-memory OTP store: { email: { code, expiresAt } }
 const OTP_STORE = new Map();
@@ -209,6 +215,49 @@ const otpHtml = (userId, code) => emailBaseTemplate(
   <p style="margin:12px 0 0 0;font-size:12px;color:#6b7280;">If you didn’t request this, you can ignore this email.</p>
   `
 );
+
+// Download link email template
+const downloadLinkHtml = (userId, files) => {
+  const isSingleFile = files.length === 1;
+  const fileListHtml = files.map(file => `
+    <div style="margin:12px 0;padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#fafbfc;">
+      <div style="font-weight:700;font-size:15px;color:#111827;margin-bottom:6px;">${file.name}</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:12px;">
+        Category: ${file.category} • Size: ${file.size} • Version: ${file.version}
+      </div>
+      <div style="margin-top:12px;">
+        ${ctaButton(file.downloadLink, 'Download File')}
+      </div>
+    </div>
+  `).join('');
+
+  const downloadAllButton = !isSingleFile ? `
+    <div style="margin:20px 0;padding:16px;border:2px solid #4f46e5;border-radius:10px;background:#eef2ff;">
+      <p style="margin:0 0 12px 0;font-size:14px;color:#374151;font-weight:600;">Download all files at once:</p>
+      ${ctaButton(files[0].downloadAllLink, 'Download All Files')}
+    </div>
+  ` : '';
+
+  return emailBaseTemplate(
+    isSingleFile ? 'Your file download link' : 'Your files download links',
+    `
+    <p style="margin:0 0 12px 0;font-size:14px;color:#374151;">Hi <strong>${userId}</strong>,</p>
+    <p style="margin:0 0 16px 0;font-size:14px;color:#374151;">
+      ${isSingleFile
+      ? 'Your requested file is ready for download. Click the button below to download it.'
+      : `You have ${files.length} files ready for download. You can download them individually or all at once.`}
+    </p>
+    <p style="margin:0 0 12px 0;font-size:13px;color:#6b7280;">
+      These download links will expire in <strong>24 hours</strong> for security reasons.
+    </p>
+    ${fileListHtml}
+    ${downloadAllButton}
+    <p style="margin:20px 0 0 0;font-size:12px;color:#6b7280;">
+      If you're having trouble with the buttons, copy and paste the download links directly into your browser.
+    </p>
+    `
+  );
+};
 
 // Cloud-based metadata storage keys
 const META_GCS_KEY = 'metadata/filemeta.json';
@@ -1094,6 +1143,250 @@ app.get('/api/files/download/:fileId', auth, async (req, res) => {
 });
 
 
+// ✅ NEW: Send download link(s) to user's email
+app.post('/api/files/send-download-link', auth, async (req, res) => {
+  try {
+    const { fileIds } = req.body; // Array of file IDs
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ message: 'File IDs are required' });
+    }
+
+    const meta = await loadMeta();
+    const allUsers = await getAllUsers();
+    const currentUser = allUsers.find(u => u.id === req.user.id);
+
+    if (!currentUser || !currentUser.email) {
+      return res.status(400).json({ message: 'User email not found. Please update your profile with an email address.' });
+    }
+
+    const files = [];
+    const fileTokens = [];
+
+    // Validate all files and create tokens
+    for (const fileId of fileIds) {
+      const file = meta[fileId];
+
+      if (!file) {
+        return res.status(404).json({ message: `File not found: ${fileId}` });
+      }
+
+      // Authorization check
+      const hasAccess = req.user.role === 'admin' ||
+        file.ownerId === req.user.id ||
+        (file.isShared && file.sharedWithTeams && file.sharedWithTeams.includes(req.user.department));
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: `Access denied for file: ${file.originalname}` });
+      }
+
+      // Create a download token (valid for 24 hours)
+      const downloadToken = jwt.sign(
+        { fileId: file.id, userId: req.user.id, email: currentUser.email },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      fileTokens.push(downloadToken);
+
+      const downloadLink = `${FRONTEND_URL}/download/${downloadToken}`;
+
+      files.push({
+        name: file.originalname,
+        category: file.category || 'Others',
+        size: file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'Unknown',
+        version: file.version || 1,
+        downloadLink
+      });
+    }
+
+    // Create a combined token for "download all"
+    const downloadAllToken = jwt.sign(
+      { fileIds, userId: req.user.id, email: currentUser.email },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    const downloadAllLink = `${FRONTEND_URL}/download-all/${downloadAllToken}`;
+
+    // Add downloadAllLink to each file object
+    files.forEach(file => {
+      file.downloadAllLink = downloadAllLink;
+    });
+
+    // Send email
+    const subject = files.length === 1 ? 'Your File Download Link' : `Your ${files.length} Files Download Links`;
+    const html = downloadLinkHtml(req.user.userId, files);
+    const text = files.length === 1
+      ? `Hi ${req.user.userId},\n\nYour file "${files[0].name}" is ready for download.\n\nDownload link: ${files[0].downloadLink}\n\nThis link will expire in 24 hours.`
+      : `Hi ${req.user.userId},\n\nYou have ${files.length} files ready for download.\n\n${files.map((f, i) => `${i + 1}. ${f.name}\n   ${f.downloadLink}`).join('\n\n')}\n\nDownload all: ${downloadAllLink}\n\nThese links will expire in 24 hours.`;
+
+    if (mailer) {
+      await mailer.sendMail({
+        from: EMAIL_FROM,
+        to: currentUser.email,
+        subject,
+        text,
+        html,
+        priority: 'high',
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
+      });
+      console.log(`Download link(s) sent to ${currentUser.email} for ${files.length} file(s)`);
+    } else {
+      console.log(`[DEV DOWNLOAD LINKS] For ${currentUser.email}:`);
+      files.forEach(f => console.log(`  - ${f.name}: ${f.downloadLink}`));
+      if (files.length > 1) console.log(`  Download All: ${downloadAllLink}`);
+    }
+
+    res.json({
+      message: `Download link${files.length > 1 ? 's have' : ' has'} been sent to ${currentUser.email}`,
+      email: currentUser.email,
+      fileCount: files.length
+    });
+
+  } catch (err) {
+    console.error('Send download link error:', err);
+    res.status(500).json({ message: 'Failed to send download link', error: err.message });
+  }
+});
+
+// ✅ NEW: Download file using token from email
+app.get('/api/files/download-with-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(400).json({ message: 'Invalid or expired download link' });
+    }
+
+    const { fileId, userId, email } = decoded;
+
+    if (!fileId || !userId) {
+      return res.status(400).json({ message: 'Invalid download token' });
+    }
+
+    const meta = await loadMeta();
+    const file = meta[fileId];
+
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    console.log(`Token download request for: ${file.originalname} (${fileId}) by user ${userId}`);
+
+    res.setHeader('Content-Disposition', `attachment; filename="${file.originalname}"`);
+    res.setHeader('Content-Type', file.mimetype);
+
+    const readStream = getGCSDownloadStream(file.gcsObjectKey);
+
+    readStream.on('error', err => {
+      console.error('GCS read error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'File read error', error: err.message });
+      }
+    });
+
+    if (file.compressionType === 'zip') {
+      const unzipper = require('unzipper');
+      const unzipStream = readStream.pipe(unzipper.ParseOne());
+      unzipStream.on('error', err => {
+        console.error('Zip decompression error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Decompression error', error: err.message });
+        }
+      });
+      unzipStream.pipe(res);
+    } else if (file.compressionType === 'brotli') {
+      const brotliStream = readStream.pipe(zlib.createBrotliDecompress());
+      brotliStream.on('error', err => {
+        console.error('Brotli decompression error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Decompression error', error: err.message });
+        }
+      });
+      brotliStream.pipe(res);
+    } else {
+      readStream.pipe(res);
+    }
+  } catch (err) {
+    console.error('Token download error:', err);
+    res.status(500).json({ message: 'Download failed', error: err.message });
+  }
+});
+
+// ✅ NEW: Download multiple files as ZIP using token from email
+app.get('/api/files/download-all-with-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(400).json({ message: 'Invalid or expired download link' });
+    }
+
+    const { fileIds, userId } = decoded;
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ message: 'Invalid download token' });
+    }
+
+    const meta = await loadMeta();
+    const archiver = require('archiver');
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="clearboard-files-${Date.now()}.zip"`);
+
+    archive.pipe(res);
+
+    for (const fileId of fileIds) {
+      const file = meta[fileId];
+
+      if (!file) {
+        console.warn(`File not found in bulk download: ${fileId}`);
+        continue;
+      }
+
+      try {
+        const readStream = getGCSDownloadStream(file.gcsObjectKey);
+
+        // Handle decompression if needed before adding to archive
+        if (file.compressionType === 'zip') {
+          const unzipper = require('unzipper');
+          const unzipStream = readStream.pipe(unzipper.ParseOne());
+          archive.append(unzipStream, { name: file.originalname });
+        } else if (file.compressionType === 'brotli') {
+          const brotliStream = readStream.pipe(zlib.createBrotliDecompress());
+          archive.append(brotliStream, { name: file.originalname });
+        } else {
+          archive.append(readStream, { name: file.originalname });
+        }
+      } catch (err) {
+        console.error(`Error adding file to archive: ${file.originalname}`, err);
+      }
+    }
+
+    archive.finalize();
+    console.log(`Bulk download initiated for ${fileIds.length} files by user ${userId}`);
+
+  } catch (err) {
+    console.error('Bulk download error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Bulk download failed', error: err.message });
+    }
+  }
+});
+
+
 // ✅ NEW: DELETE A FILE VERSION
 app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
   try {
@@ -1653,6 +1946,7 @@ app.listen(PORT, async () => {
   console.log(`Temp uploads directory: ${UPLOADS_DIR}`);
   console.log(`Metadata stored in GCS: ${META_GCS_KEY}`);
   console.log(`Users stored in GCS: ${USERS_GCS_KEY}`);
+  console.log(`Frontend URL for download links: ${FRONTEND_URL}`);
   console.log('System is fully cloud-based');
 
   // Initialize semantic search service
