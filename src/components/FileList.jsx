@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../utils/api';
 import { useNavigate, useLocation } from 'react-router-dom'; // ✅ UPDATED: include useLocation
 import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import Fuse from 'fuse.js';
+import JSZip from 'jszip';
 import * as pdfjsLib from 'pdfjs-dist'; // ✅ NEW: PDF.js for first page preview
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
@@ -16,6 +17,269 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
 ).toString();
+
+const extractTextFromDocxXmlFirstPage = (xmlDoc) => {
+  const body = xmlDoc.getElementsByTagName('w:body')?.[0];
+  if (!body) return '';
+
+  const paragraphs = Array.from(body.getElementsByTagName('w:p'));
+  const lines = [];
+
+  for (const p of paragraphs) {
+    const texts = Array.from(p.getElementsByTagName('w:t')).map(t => t.textContent || '');
+    const line = texts.join('');
+    if (line.trim().length > 0) lines.push(line);
+
+    const hasPageBreak =
+      Array.from(p.getElementsByTagName('w:br')).some(br => {
+        const t = br.getAttribute('w:type') || br.getAttribute('type');
+        return (t || '').toLowerCase() === 'page';
+      }) ||
+      p.getElementsByTagName('w:lastRenderedPageBreak').length > 0;
+
+    if (hasPageBreak) break;
+  }
+
+  return lines.join('\n').trim();
+};
+
+const extractTextFromPptxSlideXml = (xmlDoc) => {
+  const paragraphs = Array.from(xmlDoc.getElementsByTagName('a:p'));
+  const lines = [];
+
+  for (const p of paragraphs) {
+    const runs = Array.from(p.getElementsByTagName('a:t')).map(t => t.textContent || '');
+    const line = runs.join('');
+    if (line.trim().length > 0) lines.push(line);
+  }
+
+  return lines.join('\n').trim();
+};
+
+// ✅ DOCX First Page Preview Component (text-only, first page)
+const DOCXFirstPagePreview = ({ url, name }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [content, setContent] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        setContent('');
+
+        const buf = await fetch(url).then(r => r.arrayBuffer());
+        if (cancelled) return;
+
+        const zip = await JSZip.loadAsync(buf);
+
+        // DOCX usually stores main body here
+        const docXmlFile = zip.file('word/document.xml');
+        if (!docXmlFile) {
+          throw new Error('Invalid DOCX (missing word/document.xml)');
+        }
+
+        const xmlText = await docXmlFile.async('text');
+        if (cancelled) return;
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
+
+        // If parsing failed, DOMParser returns a document with <parsererror>
+        if (xmlDoc.getElementsByTagName('parsererror')?.length) {
+          throw new Error('Failed to parse DOCX XML');
+        }
+
+        const firstPageText = extractTextFromDocxXmlFirstPage(xmlDoc);
+        setContent(firstPageText || 'No text found on the first page.');
+        setLoading(false);
+      } catch (err) {
+        console.error('Error rendering DOCX preview:', err);
+        setError('Failed to load DOC/DOCX preview');
+        setLoading(false);
+      }
+    };
+
+    if (url) load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return (
+    <div style={{
+      width: '100%',
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '20px',
+      boxSizing: 'border-box'
+    }}>
+      {loading && (
+        <div style={{ textAlign: 'center', color: '#9ca3af' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #333',
+            borderTopColor: '#3b82f6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <p>Loading first page...</p>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ textAlign: 'center', color: '#ef4444' }}>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div style={{
+          width: 'min(820px, 100%)',
+          background: '#fff',
+          color: '#111827',
+          borderRadius: '10px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
+          padding: '48px 56px',
+          boxSizing: 'border-box',
+          lineHeight: 1.6,
+          fontSize: 15,
+          whiteSpace: 'pre-wrap',
+          overflow: 'hidden',
+          // Approx A4 page height; we intentionally hide overflow to show only the first page
+          maxHeight: '1120px'
+        }}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ✅ PPTX First Slide Preview Component (text-only, first slide)
+const PPTXFirstSlidePreview = ({ url, name }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [content, setContent] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        setContent('');
+
+        const buf = await fetch(url).then(r => r.arrayBuffer());
+        if (cancelled) return;
+
+        const zip = await JSZip.loadAsync(buf);
+
+        const slideKeys = Object.keys(zip.files)
+          .filter(k => /^ppt\/slides\/slide\d+\.xml$/i.test(k))
+          .sort((a, b) => {
+            const na = Number(a.match(/slide(\d+)\.xml/i)?.[1] || 0);
+            const nb = Number(b.match(/slide(\d+)\.xml/i)?.[1] || 0);
+            return na - nb;
+          });
+
+        const firstSlideKey = slideKeys[0] || 'ppt/slides/slide1.xml';
+        const slideXmlFile = zip.file(firstSlideKey);
+
+        if (!slideXmlFile) {
+          throw new Error('Invalid PPTX (missing first slide XML)');
+        }
+
+        const xmlText = await slideXmlFile.async('text');
+        if (cancelled) return;
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
+
+        if (xmlDoc.getElementsByTagName('parsererror')?.length) {
+          throw new Error('Failed to parse PPTX XML');
+        }
+
+        const firstSlideText = extractTextFromPptxSlideXml(xmlDoc);
+        setContent(firstSlideText || 'No text found on the first slide.');
+        setLoading(false);
+      } catch (err) {
+        console.error('Error rendering PPTX preview:', err);
+        setError('Failed to load PPT/PPTX preview');
+        setLoading(false);
+      }
+    };
+
+    if (url) load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return (
+    <div style={{
+      width: '100%',
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '20px',
+      boxSizing: 'border-box'
+    }}>
+      {loading && (
+        <div style={{ textAlign: 'center', color: '#9ca3af' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #333',
+            borderTopColor: '#3b82f6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <p>Loading first slide...</p>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ textAlign: 'center', color: '#ef4444' }}>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div style={{
+          width: 'min(960px, 100%)',
+          aspectRatio: '16 / 9',
+          background: '#ffffff',
+          color: '#111827',
+          borderRadius: '12px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
+          padding: '44px 52px',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'flex-start'
+        }}>
+          <div style={{
+            whiteSpace: 'pre-wrap',
+            lineHeight: 1.6,
+            fontSize: 16,
+            width: '100%'
+          }}>
+            {content}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ✅ PDF First Page Preview Component
 const PDFFirstPagePreview = ({ url, name }) => {
@@ -447,8 +711,58 @@ function FileList(props) {
   const removeFile = (index) => {
     setFilesToUpload(prev => prev.filter((_, i) => i !== index));
     // Clear file validation error if present
+    setValidationErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors.file;
+      return newErrors;
+    });
+  };
+
+  const handleFileSelect = (e) => {
+    if (readOnlyMode) return;
+    const list = Array.from(e.target.files || []);
+    if (list.length === 0) return;
+
+    // Create new file objects with empty defaults to force user selection
+    const newFiles = list.map(file => ({
+      file,
+      category: '',
+      compress: '',
+      fileCreatedAt: ''
+    }));
+
+    setFilesToUpload(prev => [...prev, ...newFiles]);
+
+    // Clear validation error for file selection
     if (validationErrors.file) {
-      setValidationErrors({ ...validationErrors, file: '' });
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.file;
+        return newErrors;
+      });
+    }
+
+    // Reset the file input value so the same file can be selected again if needed
+    e.target.value = '';
+  };
+
+  const updateFileRow = (index, field, value) => {
+    setFilesToUpload(prev => prev.map((item, i) => {
+      if (i === index) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+
+    // Clear specific validation error if fixed
+    if (field === 'category' && value) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        // We might need a more complex error structure for per-row errors, 
+        // but for now clearing the global category error (if we repurpose it) works as a start.
+        // Better: we'll handle validation dynamically in the render or specifically.
+        return newErrors;
+      });
     }
   };
 
@@ -1143,10 +1457,23 @@ function FileList(props) {
 
     if (!filesToUpload || filesToUpload.length === 0) {
       errors.file = 'Please select at least one file to upload';
-    }
-
-    if (!category || category === '') {
-      errors.category = 'Please select a category for the file';
+    } else {
+      // Validate each file
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const f = filesToUpload[i];
+        if (!f.category) {
+          errors.category = `Category missing for "${f.file.name}"`;
+          break; // Stop at first error to avoid huge list
+        }
+        if (!f.compress) {
+          errors.compress = `Compression missing for "${f.file.name}"`;
+          break;
+        }
+        if (!f.fileCreatedAt) {
+          errors.fileCreatedAt = `Date missing for "${f.file.name}"`;
+          break;
+        }
+      }
     }
 
 
@@ -1171,76 +1498,104 @@ function FileList(props) {
     e.preventDefault();
     if (readOnlyMode) return; // Block in read-only
     if (!validateUpload()) return;
+
     uploadAbortControllerRef.current = new AbortController();
     setIsUploading(true);
     setUploadProgress(0);
     setError('');
+
     try {
       const totalFiles = filesToUpload.length;
       const loadedArray = new Array(totalFiles).fill(0);
-      const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
+      const totalSize = filesToUpload.reduce((sum, item) => sum + item.file.size, 0);
+
       progressIntervalRef.current = setInterval(() => {
         const totalLoaded = loadedArray.reduce((sum, l) => sum + l, 0);
-        const totalProgress = Math.min((totalLoaded / totalSize) * 100, 99);
+        const totalProgress = totalSize > 0 ? Math.min((totalLoaded / totalSize) * 100, 99) : 0;
         setUploadProgress(Math.round(totalProgress));
       }, 100);
-      const uploadSingle = (file, index) => {
+
+      const uploadSingle = (fileItem, index) => {
         return new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const formData = new FormData();
-          formData.append('file', file);
-          formData.append('compress', compress);
-          if (!category) {
-            reject(new Error("Category is missing. Please select a category."));
+
+          formData.append('compress', fileItem.compress || 'none');
+
+          if (!fileItem.category) {
+            reject(new Error(`Category is missing for ${fileItem.file.name}.`));
             return;
           }
-          formData.append('category', category);
-          formData.append('fileCreatedAt', fileCreatedAt);
+          formData.append('category', fileItem.category);
+
+          if (!fileItem.compress) {
+            reject(new Error(`Compression is missing for ${fileItem.file.name}.`));
+            return;
+          }
+
+          if (!fileItem.fileCreatedAt) {
+            reject(new Error(`Creation date is missing for ${fileItem.file.name}.`));
+            return;
+          }
+          formData.append('fileCreatedAt', fileItem.fileCreatedAt);
+
+          // Append file LAST so that busboy reads metadata fields first
+          formData.append('file', fileItem.file);
+
           xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
           xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
           xhr.upload.addEventListener('progress', (event) => {
             if (event.lengthComputable) {
               loadedArray[index] = event.loaded;
             }
           });
+
           xhr.addEventListener('load', () => {
             if (xhr.status >= 200 && xhr.status < 300) {
-              loadedArray[index] = file.size;
+              loadedArray[index] = fileItem.file.size;
               resolve();
             } else {
-              reject(new Error(`Upload failed for ${file.name}`));
+              reject(new Error(`Upload failed for ${fileItem.file.name}`));
             }
           });
+
           xhr.addEventListener('error', () => {
-            reject(new Error(`Upload failed for ${file.name}`));
+            reject(new Error(`Upload failed for ${fileItem.file.name}`));
           });
+
           xhr.addEventListener('abort', () => {
             reject(new Error('Upload was cancelled.'));
           });
-          uploadAbortControllerRef.current.signal.addEventListener('abort', () => {
-            xhr.abort();
-          });
+
+          if (uploadAbortControllerRef.current) {
+            uploadAbortControllerRef.current.signal.addEventListener('abort', () => {
+              xhr.abort();
+            });
+          }
+
           xhr.send(formData);
         });
       };
+
       for (let i = 0; i < totalFiles; i++) {
         if (uploadAbortControllerRef.current?.signal.aborted) {
           throw new Error('Upload was cancelled.');
         }
         await uploadSingle(filesToUpload[i], i);
       }
+
       setUploadProgress(100);
       setFilesToUpload([]);
+      // Reset global defaults if needed, though they aren't used for upload anymore
       setCategory('');
-      setCustomCategory('');
       setCompress('none');
       const today = new Date().toISOString().split('T')[0];
       setFileCreatedAt(today);
-      if (document.querySelector('input[type="file"]')) {
-        document.querySelector('input[type="file"]').value = '';
-      }
+
       showSuccessMessage();
       await fetchFiles();
+
     } catch (err) {
       if (err.message === 'Upload was cancelled.') {
         setError('Upload was cancelled.');
@@ -1565,7 +1920,7 @@ function FileList(props) {
         {showUploadSection && (
           <div style={{ ...sectionCard, marginBottom: 20, opacity: readOnlyMode ? 0.5 : 1, pointerEvents: readOnlyMode ? 'none' : 'auto' }}>
             <h2 style={{ margin: 0, color: '#1f2a37', display: 'flex', alignItems: 'center' }}>
-              Upload a File
+              Upload Files
               {userRole === 'admin' && <span style={adminBadge}>ADMIN</span>}
               {readOnlyMode && <span style={{ ...adminBadge, background: '#64748b', marginLeft: 8 }}>READ-ONLY</span>}
             </h2>
@@ -1574,165 +1929,199 @@ function FileList(props) {
                 Uploading is disabled in read-only mode.
               </div>
             )}
-            <div style={{ marginTop: 12 }}>
-              <div style={uploadGrid}>
-                <div>
-                  <label style={label}>File</label>
-                  <div
+
+            <div style={{ marginTop: 16 }}>
+              {/* Top Action Bar */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
+                <label
+                  style={{
+                    ...smallBtn,
+                    background: '#3b82f6',
+                    cursor: readOnlyMode ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>+</span> Add Files
+                  <input
+                    type="file"
+                    multiple
+                    disabled={readOnlyMode}
+                    onChange={handleFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                {filesToUpload.length > 0 && (
+                  <div style={{ fontSize: 14, color: '#64748b' }}>
+                    {filesToUpload.length} file{filesToUpload.length !== 1 ? 's' : ''} selected
+                  </div>
+                )}
+
+                {filesToUpload.length > 0 && (
+                  <button
+                    onClick={() => setFilesToUpload([])}
+                    style={{ ...toggleBtn, color: '#ef4444', textDecoration: 'none', marginLeft: 'auto', fontSize: 14, fontWeight: 600 }}
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {/* File List Table */}
+              {filesToUpload.length > 0 && (
+                <div style={{
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 10,
+                  overflow: 'visible',
+                  marginBottom: 16,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', width: '50px' }}>S.No</th>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>File Name</th>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', width: '220px' }}>Category *</th>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', width: '180px' }}>Compression *</th>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', width: '200px' }}>Creation Date *</th>
+                        <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', width: '40px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filesToUpload.map((item, idx) => (
+                        <tr key={idx} style={{
+                          borderBottom: idx === filesToUpload.length - 1 ? 'none' : '1px solid #f3f4f6',
+                          background: '#fff'
+                        }}>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle', fontWeight: 600, color: '#64748b', fontSize: 13 }}>
+                            {idx + 1}.
+                          </td>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                            <div style={{ fontWeight: 500, color: '#1f2937', fontSize: 14 }}>{item.file.name}</div>
+                            <div style={{ fontSize: 12, color: '#9ca3af' }}>{(item.file.size / 1024).toFixed(1)} KB</div>
+                            {validationErrors.file && filesToUpload.length === 1 && (
+                              <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4 }}>{validationErrors.file}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                            <select
+                              value={item.category}
+                              onChange={(e) => updateFileRow(idx, 'category', e.target.value)}
+                              style={{ ...select, width: '100%', padding: '8px 12px', border: (!item.category && validationErrors.category) ? '1px solid #dc2626' : select.border }}
+                              disabled={readOnlyMode}
+                            >
+                              <option value="" disabled>Select Category</option>
+                              {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+                            </select>
+                            {validationErrors.category && !item.category && (
+                              <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4 }}>Required</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                            <select
+                              value={item.compress}
+                              onChange={(e) => updateFileRow(idx, 'compress', e.target.value)}
+                              style={{ ...select, width: '100%', padding: '8px 12px', border: (!item.compress && validationErrors.compress) ? '1px solid #dc2626' : select.border }}
+                              disabled={readOnlyMode}
+                            >
+                              <option value="" disabled>Select Type</option>
+                              <option value="zip">Zip</option>
+                              <option value="brotli">Brotli</option>
+                            </select>
+                            {validationErrors.compress && !item.compress && (
+                              <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4 }}>Required</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                            <div style={{ border: (!item.fileCreatedAt && validationErrors.fileCreatedAt) ? '1px solid #dc2626' : 'none', borderRadius: 8 }}>
+                              <ModernDatePicker
+                                selected={item.fileCreatedAt ? new Date(item.fileCreatedAt) : null}
+                                onChange={(date) => {
+                                  if (!date) {
+                                    updateFileRow(idx, 'fileCreatedAt', '');
+                                    return;
+                                  }
+                                  // Fix: Use local time to avoid timezone offset issues (off by one day)
+                                  const year = date.getFullYear();
+                                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                                  const day = String(date.getDate()).padStart(2, '0');
+                                  const localDateString = `${year}-${month}-${day}`;
+
+                                  updateFileRow(idx, 'fileCreatedAt', localDateString);
+                                }}
+                                placeholderText="Select Date"
+                                disabled={readOnlyMode}
+                              />
+                            </div>
+                            {validationErrors.fileCreatedAt && !item.fileCreatedAt && (
+                              <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4, paddingLeft: 4 }}>Required</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px 16px', verticalAlign: 'middle', textAlign: 'center' }}>
+                            <button
+                              onClick={() => removeFile(idx)}
+                              disabled={readOnlyMode}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#9ca3af',
+                                cursor: readOnlyMode ? 'not-allowed' : 'pointer',
+                                fontSize: 18,
+                                padding: 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              className="hover-red"
+                              title="Remove file"
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Main Upload Button */}
+              {filesToUpload.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
+                  {Object.keys(validationErrors).length > 0 && (
+                    <div style={{ color: '#dc2626', fontSize: 14, fontWeight: 500 }}>
+                      Please fix errors before uploading
+                    </div>
+                  )}
+                  <button
+                    onClick={handleUpload}
+                    disabled={readOnlyMode || isUploading || stats.storageUsedMB >= STORAGE_QUOTA_MB}
                     style={{
-                      border: '2px dashed #d1d5db',
-                      borderRadius: 10,
-                      padding: '14px 12px',
-                      textAlign: 'center',
-                      backgroundColor: '#f9fafb',
-                      transition: 'all 0.25s ease',
-                      cursor: readOnlyMode ? 'not-allowed' : 'pointer',
-                      position: 'relative',
+                      ...smallBtn,
+                      width: 'auto',
+                      minWidth: 160,
+                      background: (isUploading || Object.keys(validationErrors).length > 0) ? '#9ca3af' : '#2563eb',
+                      cursor: (isUploading || Object.keys(validationErrors).length > 0) ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    <input
-                      type="file"
-                      multiple
-                      disabled={readOnlyMode}
-                      onChange={readOnlyMode ? undefined : (e => {
-                        const list = Array.from(e.target.files || []);
-                        setFilesToUpload(list);
-                        if (validationErrors.file) {
-                          setValidationErrors({ ...validationErrors, file: '' });
-                        }
-                      })}
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        opacity: 0,
-                        cursor: readOnlyMode ? 'not-allowed' : 'pointer',
-                      }}
-                    />
-                    <div style={{ color: '#2563eb', fontWeight: 600, fontSize: 13 }}>
-                      Click to upload or drag files
-                    </div>
-                    <div style={{ color: '#6b7280', fontSize: 10, marginTop: 2 }}>
-                      PDF, JPG, PNG, DOCX, XLSX, PPTX etc.
-                    </div>
-                  </div>
-                  {/* File list preview */}
-                  {filesToUpload?.length > 0 && (
-                    <ul
-                      style={{
-                        marginTop: 8,
-                        background: '#f3f4f6',
-                        borderRadius: 6,
-                        border: '1px solid #e5e7eb',
-                        padding: '6px 8px',
-                        maxHeight: 90,
-                        overflowY: 'auto',
-                        fontSize: 12,
-                        color: '#374151',
-                      }}
-                    >
-                      {filesToUpload.map((file, idx) => (
-                        <li
-                          key={idx}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '2px 0',
-                            borderBottom:
-                              idx !== filesToUpload.length - 1
-                                ? '1px solid #e5e7eb'
-                                : 'none',
-                          }}
-                        >
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {file.name}
-                          </span>
-                          <span style={{ color: '#9ca3af', marginLeft: 8 }}>
-                            {(file.size / 1024).toFixed(1)} KB
-                          </span>
-                          <button
-                            onClick={readOnlyMode ? undefined : (() => removeFile(idx))}
-                            disabled={readOnlyMode}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#dc2626',
-                              cursor: readOnlyMode ? 'not-allowed' : 'pointer',
-                              fontSize: 14,
-                              fontWeight: 'bold',
-                              marginLeft: 8,
-                              padding: '2px 4px',
-                              borderRadius: 2,
-                            }}
-                            title="Remove file"
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {validationErrors.file && (
-                    <div style={{ ...errorText, marginTop: 4 }}>
-                      {validationErrors.file}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label style={label}>Category</label>
-                  <select
-                    value={category}
-                    onChange={readOnlyMode ? undefined : (e => {
-                      setCategory(e.target.value);
-                      if (validationErrors.category) {
-                        setValidationErrors({ ...validationErrors, category: '' });
-                      }
-                    })}
-                    style={select}
-                    disabled={readOnlyMode}
-                  >
-                    <option value="" disabled hidden>Select Category</option>
-                    {allCategories.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
-                  </select>
-                  {validationErrors.category && <div style={errorText}>{validationErrors.category}</div>}
-
-                </div>
-                <div>
-                  <label style={label}>Compression</label>
-                  <select value={compress} onChange={readOnlyMode ? undefined : (e => setCompress(e.target.value))} style={select} disabled={readOnlyMode}>
-
-                    <option value="zip">Zip (Faster, less compressed)</option>
-                    <option value="brotli">Brotli (Slow, more compressed)</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={label}>File Creation Date</label>
-                  <ModernDatePicker
-                    selected={fileCreatedAt ? new Date(fileCreatedAt) : null}
-                    onChange={(date) => setFileCreatedAt(date ? date.toISOString().split('T')[0] : '')}
-                    placeholderText="Select file creation date"
-                    disabled={readOnlyMode}
-                    isClearable
-                  />
-                </div>
-                <div>
-                  <button
-                    onClick={readOnlyMode ? undefined : handleUpload}
-                    disabled={readOnlyMode || isUploading || filesToUpload.length === 0 || stats.storageUsedMB >= STORAGE_QUOTA_MB}
-                    style={smallBtn}
-                  >
-                    {isUploading ? 'Uploading...' : (filesToUpload.length > 1 ? `Upload ${filesToUpload.length} files` : 'Upload')}
+                    {isUploading ? 'Uploading...' : `Upload ${filesToUpload.length} File${filesToUpload.length !== 1 ? 's' : ''}`}
                   </button>
                 </div>
-              </div>
-              {/* Progress Bar */}
+              )}
+
+              {/* Upload Progress */}
               {isUploading && !readOnlyMode && (
-                <div style={{ marginTop: 16 }}>
+                <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: '#475569', fontWeight: 500, flexGrow: 1 }}>
-                      Uploading {filesToUpload.length > 1 ? `${filesToUpload.length} files` : 'file'}...
+                    <span style={{ fontSize: 13, color: '#475569', fontWeight: 600, flexGrow: 1 }}>
+                      Uploading {filesToUpload.length} file{filesToUpload.length !== 1 ? 's' : ''}...
                     </span>
-                    <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+                    <span style={{ fontSize: 13, color: '#2563eb', fontWeight: 700 }}>
                       {uploadProgress}%
                     </span>
                     <button onClick={handleCancelUpload} style={cancelBtnStyle}>
@@ -1814,7 +2203,17 @@ function FileList(props) {
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Date From</label>
               <ModernDatePicker
                 selected={filterDateFrom ? new Date(filterDateFrom) : null}
-                onChange={(date) => setFilterDateFrom(date ? date.toISOString().split('T')[0] : '')}
+                onChange={(date) => {
+                  if (!date) {
+                    setFilterDateFrom('');
+                    return;
+                  }
+                  // Fix: Manual local date string construction (YYYY-MM-DD)
+                  const year = date.getFullYear();
+                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                  const day = String(date.getDate()).padStart(2, '0');
+                  setFilterDateFrom(`${year}-${month}-${day}`);
+                }}
                 placeholderText="Select start date"
                 isClearable
               />
@@ -1825,7 +2224,17 @@ function FileList(props) {
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Date To</label>
               <ModernDatePicker
                 selected={filterDateTo ? new Date(filterDateTo) : null}
-                onChange={(date) => setFilterDateTo(date ? date.toISOString().split('T')[0] : '')}
+                onChange={(date) => {
+                  if (!date) {
+                    setFilterDateTo('');
+                    return;
+                  }
+                  // Fix: Manual local date string construction (YYYY-MM-DD)
+                  const year = date.getFullYear();
+                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                  const day = String(date.getDate()).padStart(2, '0');
+                  setFilterDateTo(`${year}-${month}-${day}`);
+                }}
                 placeholderText="Select end date"
                 isClearable
               />
@@ -2572,6 +2981,20 @@ function FileList(props) {
                   if (fileType === 'pdf') {
                     return (
                       <PDFFirstPagePreview url={previewFileData.url} name={previewFileData.name} />
+                    );
+                  }
+
+                  // DOC/DOCX Preview - First Page Only (text-only)
+                  if (fileType === 'doc' || fileType === 'docx') {
+                    return (
+                      <DOCXFirstPagePreview url={previewFileData.url} name={previewFileData.name} />
+                    );
+                  }
+
+                  // PPT/PPTX Preview - First Slide Only (text-only)
+                  if (fileType === 'ppt' || fileType === 'pptx') {
+                    return (
+                      <PPTXFirstSlidePreview url={previewFileData.url} name={previewFileData.name} />
                     );
                   }
 
