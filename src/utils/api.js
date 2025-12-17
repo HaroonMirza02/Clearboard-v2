@@ -25,6 +25,7 @@ export const API_ENDPOINTS = {
   FORGOT_PASSWORD: `${API_BASE_URL}/api/auth/forgot-password`,
   CHANGE_PASSWORD: `${API_BASE_URL}/api/auth/change-password`,
   RESET_PASSWORD: `${API_BASE_URL}/api/auth/reset-password`,
+  SEND_DELETE_OTP: `${API_BASE_URL}/api/auth/send-delete-otp`,
 
   // Google OAuth endpoints
   GOOGLE_AUTH: `${API_BASE_URL}/api/auth/google`,

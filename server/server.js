@@ -1416,10 +1416,77 @@ app.get('/api/files/download-all-with-token/:token', async (req, res) => {
 });
 
 
-// ✅ NEW: DELETE A FILE VERSION
+// ✅ NEW: Endpoint to send OTP for file deletion
+app.post('/api/auth/send-delete-otp', auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const email = req.user.email;
+
+    // Ensure we have the email
+    let targetEmail = email;
+    if (!targetEmail) {
+      const allUsers = await getAllUsers();
+      const user = allUsers.find(u => u.id === req.user.id);
+      targetEmail = user?.email;
+    }
+
+    if (!targetEmail) {
+      return res.status(400).json({ message: 'No email address found for this user.' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // Store OTP
+    OTP_STORE.set(`delete_${req.user.id}`, { code: otp, expiresAt });
+
+    if (mailer) {
+      await mailer.sendMail({
+        from: EMAIL_FROM,
+        to: targetEmail,
+        subject: 'File Deletion Verification Code',
+        html: otpHtml(userId, otp)
+      });
+    } else {
+      console.log(`[DEV DELETE OTP] For ${userId}: ${otp}`);
+    }
+
+    res.json({ message: 'OTP sent to your email.' });
+
+  } catch (err) {
+    console.error('Send delete OTP error:', err);
+    res.status(500).json({ message: 'Failed to send OTP.' });
+  }
+});
+
+// ✅ NEW: DELETE A FILE VERSION (SECURED WITH OTP)
 app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
+    const { otp } = req.body;
+
+    if (!otp) {
+      return res.status(400).json({ message: 'OTP is required to delete a file.' });
+    }
+
+    // Verify OTP
+    const storedData = OTP_STORE.get(`delete_${req.user.id}`);
+    if (!storedData) {
+      return res.status(400).json({ message: 'OTP not found or expired. Please request a new one.' });
+    }
+
+    if (Date.now() > storedData.expiresAt) {
+      OTP_STORE.delete(`delete_${req.user.id}`);
+      return res.status(400).json({ message: 'OTP expired.' });
+    }
+
+    if (storedData.code !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP.' });
+    }
+
+    // OTP Correct - Proceed with deletion
+    OTP_STORE.delete(`delete_${req.user.id}`);
+
     const meta = await loadMeta();
     const fileToDelete = meta[fileId];
 

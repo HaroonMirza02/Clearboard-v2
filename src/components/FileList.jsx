@@ -596,6 +596,9 @@ function FileList(props) {
   const [adminProjectFilter, setAdminProjectFilter] = useState('');
   const [isContextView, setIsContextView] = useState(false); // true when coming from Teams/Projects context
   const [contextUserParam, setContextUserParam] = useState(''); // raw ?user=... from URL for Teams view
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [isDeleteOtpSent, setIsDeleteOtpSent] = useState(false);
+  const [deleteOtpLoading, setDeleteOtpLoading] = useState(false);
   const uploadAbortControllerRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const [token, setToken] = useState('');
@@ -699,6 +702,30 @@ function FileList(props) {
     if (readOnlyMode) return; // Block in read-only
     setSelectedFile(file);
     setIsDeleteModalOpen(true);
+    // Reset OTP state when opening modal
+    setDeleteOtp('');
+    setIsDeleteOtpSent(false);
+  };
+
+  const handleSendDeleteOtp = async () => {
+    setDeleteOtpLoading(true);
+    setError('');
+    try {
+      const res = await fetch(API_ENDPOINTS.SEND_DELETE_OTP, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to send OTP');
+
+      setIsDeleteOtpSent(true);
+      alert('OTP sent to your email address.');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeleteOtpLoading(false);
+    }
   };
 
   const handleCancelUpload = () => {
@@ -831,12 +858,27 @@ function FileList(props) {
   const handleDeleteFile = async () => {
     if (readOnlyMode) return; // Block in read-only
     if (!selectedFile) return;
+
+    if (!deleteOtp) {
+      alert("Please enter the OTP sent to your email.");
+      return;
+    }
+
     try {
       const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ otp: deleteOtp })
       });
-      if (!res.ok) throw new Error('Failed to delete file from server');
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to delete file');
+      }
+
       setFiles(prevFiles => {
         const newFiles = prevFiles.map(fileGroup => {
           const isTargetGroup = fileGroup.versions.some(v => v.id === selectedFile.id);
@@ -2880,21 +2922,66 @@ function FileList(props) {
       )}
 
       {/* DELETE CONFIRMATION MODAL */}
-      {isDeleteModalOpen && !readOnlyMode && (
+      {/* DELETE CONFIRMATION MODAL WITH OTP */}
+      {isDeleteModalOpen && (
         <div className="modal-overlay" onClick={handleCloseModals}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content delete-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Confirm Deletion</h3>
+              <h3>Confirm Deletion</h3>
+              <button className="close-btn" onClick={handleCloseModals}>&times;</button>
             </div>
             <div className="modal-body">
-              <p>
-                Are you sure you want to permanently delete the file <span className="highlight">"{selectedFile?.name}.{selectedFile?.fileType}"</span>?
+              <p>Are you sure you want to permanently delete <strong>{selectedFile?.name}</strong>?</p>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: 8 }}>
+                This action requires email verification.
               </p>
-              <p style={{ fontSize: '13px', color: '#dc2626' }}>This action cannot be undone.</p>
+
+              {!isDeleteOtpSent ? (
+                <div style={{ marginTop: 20, textAlign: 'center' }}>
+                  <button
+                    onClick={handleSendDeleteOtp}
+                    disabled={deleteOtpLoading}
+                    style={{
+                      ...primaryBtn,
+                      width: 'auto',
+                      padding: '10px 20px',
+                      background: deleteOtpLoading ? '#9ca3af' : '#2563eb'
+                    }}
+                  >
+                    {deleteOtpLoading ? 'Sending...' : 'Send OTP to Email'}
+                  </button>
+                  <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
+                    Click to receive a verification code.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 20 }}>
+                  <label style={label}>Enter OTP</label>
+                  <input
+                    type="text"
+                    placeholder="Enter 6-digit OTP"
+                    value={deleteOtp}
+                    onChange={e => setDeleteOtp(e.target.value)}
+                    style={{ ...input, textAlign: 'center', letterSpacing: '4px', fontSize: '18px', fontWeight: 'bold' }}
+                    maxLength={6}
+                  />
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+                    Sent to your email. <span style={{ color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }} onClick={handleSendDeleteOtp}>Resend?</span>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
-              <button className="modal-button cancel" onClick={handleCloseModals}>Cancel</button>
-              <button className="modal-button delete" onClick={handleDeleteFile} disabled={readOnlyMode}>Delete</button>
+              <button className="btn-secondary" onClick={handleCloseModals}>Cancel</button>
+              {isDeleteOtpSent && (
+                <button
+                  className="btn-danger"
+                  onClick={handleDeleteFile}
+                  disabled={!deleteOtp || deleteOtp.length < 6}
+                >
+                  Verify & Delete
+                </button>
+              )}
             </div>
           </div>
         </div>
