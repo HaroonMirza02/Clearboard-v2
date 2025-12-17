@@ -8,6 +8,7 @@ import '../styles/Modal.css'; // The new modal styles
 import '../styles/Calendar.css'; // Professional calendar picker styling
 import AdminUserFilter from './AdminUserFilter';
 import SemanticSearchBar from './SemanticSearchBar'; // ✅ NEW: Semantic search component
+import ModernDatePicker from './ModernDatePicker'; // ✅ NEW: Modern calendar picker
 
 const TEAM_CATEGORIES = {
   'Software Development': ['WebDev Assets', 'General Research', 'Project Demo', 'Source Code'],
@@ -1479,59 +1480,13 @@ function FileList(props) {
                 </div>
                 <div>
                   <label style={label}>File Creation Date</label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <span style={{
-                      position: 'absolute',
-                      left: '12px',
-                      fontSize: '16px',
-                      color: '#6b7280',
-                      pointerEvents: 'none',
-                      zIndex: 1
-                    }}>📅</span>
-                    <input
-                      type="date"
-                      value={fileCreatedAt}
-                      onChange={readOnlyMode ? undefined : (e => setFileCreatedAt(e.target.value))}
-                      disabled={readOnlyMode}
-                      style={{
-                        ...input,
-                        paddingLeft: '40px',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        color: '#1f2937',
-                        border: '2px solid #e5e7eb',
-                        borderRadius: '8px',
-                        transition: 'all 0.2s ease',
-                        outline: 'none',
-                        cursor: readOnlyMode ? 'not-allowed' : 'pointer',
-                        letterSpacing: '0.01em',
-                        lineHeight: '1.5',
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-                      }}
-                      onFocus={(e) => {
-                        if (!readOnlyMode) {
-                          e.target.style.borderColor = '#3b82f6';
-                          e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                        }
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!readOnlyMode && document.activeElement !== e.target) {
-                          e.target.style.borderColor = '#d1d5db';
-                          e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!readOnlyMode && document.activeElement !== e.target) {
-                          e.target.style.borderColor = '#e5e7eb';
-                          e.target.style.boxShadow = 'none';
-                        }
-                      }}
-                    />
-                  </div>
+                  <ModernDatePicker
+                    selected={fileCreatedAt ? new Date(fileCreatedAt) : null}
+                    onChange={(date) => setFileCreatedAt(date ? date.toISOString().split('T')[0] : '')}
+                    placeholderText="Select file creation date"
+                    disabled={readOnlyMode}
+                    isClearable
+                  />
                 </div>
                 <div>
                   <button
@@ -1630,83 +1585,23 @@ function FileList(props) {
             {/* Date From Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Date From</label>
-              <div style={{ position: 'relative' }}>
-                <span style={{
-                  position: 'absolute',
-                  left: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  fontSize: '16px',
-                  color: '#9ca3af',
-                  pointerEvents: 'none',
-                  zIndex: 1
-                }}>📅</span>
-                <input
-                  type="date"
-                  value={filterDateFrom}
-                  onChange={e => setFilterDateFrom(e.target.value)}
-                  style={{
-                    ...input,
-                    height: '44px',
-                    paddingLeft: '44px',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    border: '2px solid #e5e7eb',
-                    borderRadius: 10,
-                    transition: 'all 0.2s ease',
-                    cursor: 'pointer'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#4f46e5';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e5e7eb';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                />
-              </div>
+              <ModernDatePicker
+                selected={filterDateFrom ? new Date(filterDateFrom) : null}
+                onChange={(date) => setFilterDateFrom(date ? date.toISOString().split('T')[0] : '')}
+                placeholderText="Select start date"
+                isClearable
+              />
             </div>
 
             {/* Date To Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Date To</label>
-              <div style={{ position: 'relative' }}>
-                <span style={{
-                  position: 'absolute',
-                  left: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  fontSize: '16px',
-                  color: '#9ca3af',
-                  pointerEvents: 'none',
-                  zIndex: 1
-                }}>📅</span>
-                <input
-                  type="date"
-                  value={filterDateTo}
-                  onChange={e => setFilterDateTo(e.target.value)}
-                  style={{
-                    ...input,
-                    height: '44px',
-                    paddingLeft: '44px',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    border: '2px solid #e5e7eb',
-                    borderRadius: 10,
-                    transition: 'all 0.2s ease',
-                    cursor: 'pointer'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#4f46e5';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e5e7eb';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                />
-              </div>
+              <ModernDatePicker
+                selected={filterDateTo ? new Date(filterDateTo) : null}
+                onChange={(date) => setFilterDateTo(date ? date.toISOString().split('T')[0] : '')}
+                placeholderText="Select end date"
+                isClearable
+              />
             </div>
 
             {/* Filename Search */}

@@ -23,7 +23,8 @@ function Dashboard() {
   return (
     <section className="cb-dashboard">
       {/* View Mode Toggle */}
-      <div style={{
+      {/* COMMENTED OUT - Grid View temporarily hidden */}
+      {/* <div style={{
         position: 'fixed',
         top: NAVBAR_HEIGHT + VIEW_TOGGLE_SPACING,
         right: 20,
@@ -67,10 +68,14 @@ function Dashboard() {
         >
           📋 Table View
         </button>
-      </div>
+      </div> */}
 
       {/* Render based on view mode */}
-      {viewMode === 'grid' ? <FacetedFileList /> : <FileList />}
+      {/* COMMENTED OUT - Grid View temporarily hidden */}
+      {/* {viewMode === 'grid' ? <FacetedFileList /> : <FileList />} */}
+
+      {/* Always show Table View for now */}
+      <FileList />
     </section>
   )
 }

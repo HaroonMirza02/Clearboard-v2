@@ -30,7 +30,7 @@ const router = createBrowserRouter([
       { path: '/signup', element: <Signup /> },
       { path: '/admin-login', element: <AdminLogin /> },
       { path: '/dashboard', element: <Dashboard /> },
-      { path: '/files/grid', element: <FacetedFileList /> }, // ✅ New Faceted File List View
+      // { path: '/files/grid', element: <FacetedFileList /> }, // ✅ COMMENTED OUT - Grid View temporarily hidden
       { path: '/reset-password/:token', element: <ResetPassword /> },
       { path: '/download/:token', element: <DownloadPage /> }, // ✅ Download single file from email
       { path: '/download-all/:token', element: <DownloadAllPage /> }, // ✅ Download multiple files from email
