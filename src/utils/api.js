@@ -42,6 +42,7 @@ export const API_ENDPOINTS = {
 
   // ✅ ADD THESE NEW ENDPOINTS FOR EDIT AND DELETE
   DELETE_FILE: (fileId) => `${API_BASE_URL}/api/files/delete/${fileId}`,
+  DELETE_MULTIPLE: `${API_BASE_URL}/api/files/delete-multiple`,
   EDIT_FILE: (fileId) => `${API_BASE_URL}/api/files/edit/${fileId}`,
   // Share endpoints
   SHARE_FILE: (fileId) => `${API_BASE_URL}/api/files/share/${fileId}`,

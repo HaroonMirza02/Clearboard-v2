@@ -599,6 +599,7 @@ function FileList(props) {
   const [deleteOtp, setDeleteOtp] = useState('');
   const [isDeleteOtpSent, setIsDeleteOtpSent] = useState(false);
   const [deleteOtpLoading, setDeleteOtpLoading] = useState(false);
+  const [deleteMode, setDeleteMode] = useState('single'); // 'single' or 'multiple'
   const uploadAbortControllerRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const [token, setToken] = useState('');
@@ -698,9 +699,20 @@ function FileList(props) {
     setIsEditModalOpen(true);
   };
 
-  const handleOpenDeleteModal = (file) => {
+  const handleOpenDeleteModal = (file = null) => {
     if (readOnlyMode) return; // Block in read-only
-    setSelectedFile(file);
+
+    if (file) {
+      // Single file delete
+      setSelectedFile(file);
+      setDeleteMode('single');
+    } else {
+      // Bulk delete (requires selectedFiles)
+      if (selectedFiles.size === 0) return;
+      setDeleteMode('multiple');
+      setSelectedFile(null); // Clear single selection
+    }
+
     setIsDeleteModalOpen(true);
     // Reset OTP state when opening modal
     setDeleteOtp('');
@@ -857,7 +869,10 @@ function FileList(props) {
 
   const handleDeleteFile = async () => {
     if (readOnlyMode) return; // Block in read-only
-    if (!selectedFile) return;
+
+    // Check requirements based on mode
+    if (deleteMode === 'single' && !selectedFile) return;
+    if (deleteMode === 'multiple' && selectedFiles.size === 0) return;
 
     if (!deleteOtp) {
       alert("Please enter the OTP sent to your email.");
@@ -865,37 +880,72 @@ function FileList(props) {
     }
 
     try {
-      const res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ otp: deleteOtp })
-      });
+      let res;
+      let deletedIds = [];
 
+      if (deleteMode === 'single') {
+        res = await fetch(API_ENDPOINTS.DELETE_FILE(selectedFile.id), {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ otp: deleteOtp })
+        });
+        deletedIds = [selectedFile.id];
+      } else {
+        // Bulk Delete
+        const fileIds = Array.from(selectedFiles);
+        res = await fetch(API_ENDPOINTS.DELETE_MULTIPLE, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ fileIds, otp: deleteOtp })
+        });
+      }
+
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Failed to delete file');
+        throw new Error(data.message || 'Failed to delete file(s)');
+      }
+
+      // Update UI: remove deleted files
+      if (deleteMode === 'multiple') {
+        if (data.deletedIds && Array.isArray(data.deletedIds)) {
+          deletedIds = data.deletedIds;
+        }
+        // Clear selection
+        setSelectedFiles(new Set());
       }
 
       setFiles(prevFiles => {
+        // We need to filter out the specific versions that were deleted
         const newFiles = prevFiles.map(fileGroup => {
-          const isTargetGroup = fileGroup.versions.some(v => v.id === selectedFile.id);
-          if (isTargetGroup) {
-            const updatedVersions = fileGroup.versions.filter(v => v.id !== selectedFile.id);
-            if (updatedVersions.length === 0) {
-              return null;
-            }
+          // Check if any version in this group is in the deleted list
+          const hasDeletedVersion = fileGroup.versions.some(v => deletedIds.includes(v.id));
+
+          if (hasDeletedVersion) {
+            // Filter out deleted versions
+            const updatedVersions = fileGroup.versions.filter(v => !deletedIds.includes(v.id));
+
+            // If group is empty, remove it completely
+            if (updatedVersions.length === 0) return null;
+
             return { ...fileGroup, versions: updatedVersions };
           }
           return fileGroup;
         });
         return newFiles.filter(Boolean);
       });
+
       handleCloseModals();
+      setSuccess(`Deleted ${deletedIds.length} file(s) successfully.`);
+      setTimeout(() => setSuccess(''), 3000);
+
     } catch (err) {
-      alert(err.message || 'An error occurred while updating the UI.');
+      alert(err.message || 'An error occurred while deleting.');
     }
   };
 
@@ -2710,7 +2760,21 @@ function FileList(props) {
                     opacity: downloadLinkSending ? 0.6 : 1
                   }}
                 >
-                  📧 {downloadLinkSending ? 'Sending...' : 'Send Download Links to Email'}
+                  📧 {downloadLinkSending ? 'Sending...' : 'Send Download Links'}
+                </button>
+                <button
+                  onClick={() => handleOpenDeleteModal(null)} // Call with null for bulk mode
+                  style={{
+                    padding: '8px 16px',
+                    background: '#ef4444',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  🗑️ Delete Selected
                 </button>
               </div>
             </div>

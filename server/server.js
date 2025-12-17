@@ -1527,6 +1527,95 @@ app.delete('/api/files/delete/:fileId', auth, async (req, res) => {
   }
 });
 
+// ✅ NEW: BULK DELETE FILES (SECURED WITH OTP)
+app.post('/api/files/delete-multiple', auth, async (req, res) => {
+  try {
+    const { fileIds, otp } = req.body;
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ message: 'No files selected for deletion.' });
+    }
+
+    if (!otp) {
+      return res.status(400).json({ message: 'OTP is required to delete files.' });
+    }
+
+    // Verify OTP
+    const storedData = OTP_STORE.get(`delete_${req.user.id}`);
+    if (!storedData) {
+      return res.status(400).json({ message: 'OTP not found or expired. Please request a new one.' });
+    }
+
+    if (Date.now() > storedData.expiresAt) {
+      OTP_STORE.delete(`delete_${req.user.id}`);
+      return res.status(400).json({ message: 'OTP expired.' });
+    }
+
+    if (storedData.code !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP.' });
+    }
+
+    // OTP Correct - Proceed with deletion
+    OTP_STORE.delete(`delete_${req.user.id}`);
+
+    const meta = await loadMeta();
+    const deletedIds = [];
+    const errors = [];
+
+    for (const fileId of fileIds) {
+      const fileToDelete = meta[fileId];
+
+      if (!fileToDelete) {
+        errors.push(`File ${fileId} not found`);
+        continue;
+      }
+
+      // Authorization check for each file
+      if (req.user.role !== 'admin' && fileToDelete.ownerId !== req.user.id) {
+        errors.push(`Access denied for file ${fileToDelete.name}`);
+        continue;
+      }
+
+      try {
+        // Delete from GCS
+        await deleteFromGCS(fileToDelete.gcsObjectKey);
+
+        // Remove from metadata
+        delete meta[fileId];
+        deletedIds.push(fileId);
+
+        // Remove from semantic search (async)
+        setImmediate(async () => {
+          try {
+            await removeDocument(fileId);
+          } catch (e) {
+            console.error(`Failed to remove ${fileId} from index:`, e);
+          }
+        });
+
+      } catch (err) {
+        console.error(`Failed to delete file ${fileId}:`, err);
+        errors.push(`Failed to delete ${fileToDelete.name}`);
+      }
+    }
+
+    // Save updated metadata if any files were deleted
+    if (deletedIds.length > 0) {
+      await saveMeta(meta);
+    }
+
+    res.json({
+      message: `Successfully deleted ${deletedIds.length} files.`,
+      deletedIds,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ message: 'Bulk delete failed', error: err.message });
+  }
+});
+
 // ✅ REPLACE your old edit endpoint with this streaming version
 app.post('/api/files/edit/:fileId', auth, async (req, res) => {
   try {
