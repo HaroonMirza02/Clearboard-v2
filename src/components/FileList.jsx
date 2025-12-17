@@ -231,6 +231,8 @@ function FileList(props) {
   });
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [downloadLinkSending, setDownloadLinkSending] = useState(false);
+  const [showDownloadLinkModal, setShowDownloadLinkModal] = useState(false);
+  const [downloadLinkMessage, setDownloadLinkMessage] = useState('');
   const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
 
     if (!stats.storageUsedMB) {
@@ -415,7 +417,8 @@ function FileList(props) {
   // Send download link(s) to email
   const handleSendDownloadLink = async (fileIds) => {
     if (!fileIds || fileIds.length === 0) {
-      alert('Please select at least one file');
+      setError('Please select at least one file');
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
@@ -436,11 +439,14 @@ function FileList(props) {
         throw new Error(data.message || 'Failed to send download link');
       }
 
-      alert(data.message);
+      // Show professional modal instead of alert
+      setDownloadLinkMessage(data.message || 'Download link sent successfully!');
+      setShowDownloadLinkModal(true);
       setSelectedFiles(new Set()); // Clear selection
       setOpenActionMenuId(null); // Close menu
     } catch (err) {
-      alert(err.message || 'Failed to send download link');
+      setError(err.message || 'Failed to send download link');
+      setTimeout(() => setError(''), 3000);
     } finally {
       setDownloadLinkSending(false);
     }
@@ -1467,7 +1473,7 @@ function FileList(props) {
                   <label style={label}>Compression</label>
                   <select value={compress} onChange={readOnlyMode ? undefined : (e => setCompress(e.target.value))} style={select} disabled={readOnlyMode}>
 
-                    <option value="zip">Zip (Fast, less compressed)</option>
+                    <option value="zip">Zip (Faster, less compressed)</option>
                     <option value="brotli">Brotli (Slow, more compressed)</option>
                   </select>
                 </div>
@@ -2577,6 +2583,161 @@ function FileList(props) {
         </div>
       )}
 
+      {/* Download Link Confirmation Modal */}
+      {showDownloadLinkModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+          onClick={() => setShowDownloadLinkModal(false)}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+              borderRadius: '20px',
+              padding: '40px',
+              maxWidth: '480px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              animation: 'slideUp 0.3s ease-out',
+              position: 'relative',
+              border: '1px solid rgba(255, 255, 255, 0.8)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Success Icon */}
+            <div style={{
+              width: '80px',
+              height: '80px',
+              margin: '0 auto 24px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 8px 24px rgba(16, 185, 129, 0.3)',
+              animation: 'scaleIn 0.4s ease-out 0.1s both'
+            }}>
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+
+            {/* Title */}
+            <h2 style={{
+              margin: '0 0 16px 0',
+              fontSize: '28px',
+              fontWeight: '700',
+              color: '#111827',
+              textAlign: 'center',
+              letterSpacing: '-0.02em'
+            }}>
+              Email Sent Successfully!
+            </h2>
+
+            {/* Message */}
+            <p style={{
+              margin: '0 0 32px 0',
+              fontSize: '16px',
+              color: '#6b7280',
+              textAlign: 'center',
+              lineHeight: '1.6'
+            }}>
+              {downloadLinkMessage || 'You will receive an email with the download link shortly. Please check your inbox.'}
+            </p>
+
+            {/* Info Box */}
+            <div style={{
+              background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+              border: '1px solid #93c5fd',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '24px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '24px',
+                height: '24px',
+                background: '#3b82f6',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                marginTop: '2px'
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{
+                  margin: 0,
+                  fontSize: '14px',
+                  color: '#1e40af',
+                  fontWeight: '500',
+                  lineHeight: '1.5'
+                }}>
+                  <strong>Note:</strong> The download link will be valid for 24 hours. If you don't see the email, please check your spam folder.
+                </p>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setShowDownloadLinkModal(false)}
+              style={{
+                width: '100%',
+                padding: '14px 24px',
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'translateY(0)';
+                e.target.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
+              }}
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Add CSS animations */}
       <style>{`
         @keyframes fadeIn {
@@ -2586,6 +2747,26 @@ function FileList(props) {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes scaleIn {
+          from {
+            transform: scale(0);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1);
+            opacity: 1;
+          }
         }
       `}</style>
     </div>

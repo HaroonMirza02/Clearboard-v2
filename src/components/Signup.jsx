@@ -133,7 +133,7 @@ function Signup() {
       </div>
 
       {/* Google Sign-In Button */}
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ marginBottom: '12px' }}>
         <GoogleSignInButton />
       </div>
 
@@ -207,7 +207,7 @@ function Signup() {
         })()}
 
         {/* ✅ reCAPTCHA Section */}
-        <div className="form-group" style={{ marginTop: '1rem' }}>
+        <div className="form-group" style={{ marginTop: '0.5rem' }}>
           <ReCAPTCHA
             ref={recaptchaRef}
             sitekey="6Lc0MesrAAAAAA1cZG8eHLy-Xsh_W-NoMD8WgUH_"

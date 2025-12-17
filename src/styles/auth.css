@@ -2,8 +2,8 @@
 
 .auth-container {
   max-width: 400px;
-  margin: 40px auto;
-  padding: 2rem;
+  margin: 20px auto;
+  padding: 1.5rem;
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -11,13 +11,13 @@
 
 .auth-header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
 .auth-header h2 {
-  font-size: 2rem;
+  font-size: 1.75rem;
   color: #333;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .auth-header p {
@@ -28,26 +28,26 @@
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.875rem;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .form-group label {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: #555;
   font-weight: 500;
 }
 
 .form-group input {
-  padding: 0.75rem;
+  padding: 0.625rem;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   transition: border-color 0.2s ease;
 }
 
@@ -63,10 +63,10 @@
 }
 
 .form-group select {
-  padding: 0.75rem;
+  padding: 0.625rem;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   background-color: white;
   transition: border-color 0.2s ease;
   cursor: pointer;
@@ -95,12 +95,12 @@
 }
 
 .verify-button {
-  padding: 0.75rem 1rem;
+  padding: 0.625rem 0.875rem;
   background: #28a745;
   color: white;
   border: none;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s ease;
@@ -129,15 +129,15 @@
 
 .password-requirements {
   background: #f8f9fa;
-  padding: 1rem;
+  padding: 0.75rem;
   border-radius: 6px;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .password-requirements p {
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   color: #666;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .password-requirements ul {
@@ -147,9 +147,9 @@
 }
 
 .password-requirements li {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: #dc3545;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
   display: flex;
   align-items: center;
 }
@@ -174,10 +174,10 @@
 .submit-button {
   background: #007bff;
   color: white;
-  padding: 0.75rem;
+  padding: 0.625rem;
   border: none;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s ease;
@@ -193,9 +193,9 @@
 }
 
 .auth-footer {
-  margin-top: 1.5rem;
+  margin-top: 1rem;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: #666;
 }
 
@@ -215,8 +215,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 12px 24px;
+  gap: 10px;
+  padding: 10px 20px;
   background: white;
   border: 1px solid #dadce0;
   border-radius: 6px;
@@ -249,7 +249,7 @@
 .auth-divider {
   position: relative;
   text-align: center;
-  margin: 20px 0;
+  margin: 12px 0;
 }
 
 .auth-divider::before {
