@@ -39,7 +39,7 @@ const ADMIN_PROJECTS = [
 ];
 
 // Styles
-const pageStyle = { background: '#f4f7fb', minHeight: '100vh', padding: '48px 16px' };
+const pageStyle = { background: '#f4f7fb', minHeight: '100vh', padding: '20px 16px' };
 const cardStyle = {
   maxWidth: 420,
   margin: '8vh auto',
@@ -72,8 +72,8 @@ const statSub = { fontSize: 13, color: '#10b981' };
 
 const tableWrap = { ...sectionCard, padding: 0 };
 const tableStyle = { width: '100%', borderCollapse: 'separate', borderSpacing: 0 };
-const thStyle = { background: '#fff', color: '#222', fontWeight: 600, padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontSize: 12, letterSpacing: 0.1, verticalAlign: 'middle', height: 32, boxSizing: 'border-box' };
-const tdStyle = { padding: '8px 10px', borderBottom: '1px solid #f3f4f6', verticalAlign: 'middle', fontSize: 12, color: '#222', background: '#fff', height: 32, boxSizing: 'border-box' };
+const thStyle = { background: '#fff', color: '#222', fontWeight: 600, padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb', fontSize: 12, letterSpacing: 0.1, verticalAlign: 'middle', height: 32, boxSizing: 'border-box' };
+const tdStyle = { padding: '8px 10px', borderBottom: '1px solid #f3f4f6', borderRight: '1px solid #f3f4f6', verticalAlign: 'middle', textAlign: 'center', fontSize: 12, color: '#222', background: '#fff', height: 32, boxSizing: 'border-box' };
 const zebra = idx => ({ background: idx % 2 === 0 ? '#fff' : '#fafbff' });
 const pill = { padding: '4px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12, display: 'inline-block' };
 const adminBadge = { padding: '6px 12px', borderRadius: 6, background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 12, display: 'inline-block', marginLeft: 12 };
@@ -234,6 +234,10 @@ function FileList(props) {
   const [downloadLinkSending, setDownloadLinkSending] = useState(false);
   const [showDownloadLinkModal, setShowDownloadLinkModal] = useState(false);
   const [downloadLinkMessage, setDownloadLinkMessage] = useState('');
+
+  // ✅ NEW: Sorting and File Type Filtering
+  const [sortBy, setSortBy] = useState('recent'); // 'recent', 'oldest', 'name-asc', 'name-desc', 'size-asc', 'size-desc'
+  const [fileTypeFilter, setFileTypeFilter] = useState('all'); // 'all', 'pdf', 'ppt', 'doc', 'excel', 'image', 'video', 'other'
   const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
 
     if (!stats.storageUsedMB) {
@@ -886,24 +890,96 @@ function FileList(props) {
       return true;
     });
 
-    // Step 2: If the search query is empty, return the results from Step 1
-    if (!searchQuery.trim()) {
-      return filteredFiles;
+    // ✅ NEW: File Type Filtering
+    if (fileTypeFilter !== 'all') {
+      filteredFiles = filteredFiles.filter(f => {
+        // Check file type from the first version (most recent)
+        const firstVersion = f.versions?.[0] || {};
+        const fileType = (firstVersion.fileType || firstVersion.mimetype || f.fileType || f.mimetype || '').toLowerCase();
+        const fileName = (f.name || '').toLowerCase();
+
+        // The fileType property contains the extension directly (e.g., "pptx", "pdf", "png")
+        // Filename does NOT include the extension
+        const extension = fileType;
+
+        switch (fileTypeFilter) {
+          case 'pdf':
+            return extension === 'pdf';
+          case 'ppt':
+            return extension === 'ppt' || extension === 'pptx';
+          case 'doc':
+            return extension === 'doc' || extension === 'docx';
+          case 'excel':
+            return extension === 'xls' || extension === 'xlsx' || extension === 'csv';
+          case 'image':
+            return ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(extension);
+          case 'video':
+            return ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm'].includes(extension);
+          case 'other':
+            // Files that don't match common types
+            const commonExtensions = ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'csv',
+              'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico',
+              'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm'];
+            return !commonExtensions.includes(extension);
+          default:
+            return true;
+        }
+      });
     }
 
-    // Step 3: Apply fuzzy search on the pre-filtered results
-    const fuse = new Fuse(filteredFiles, {
-      keys: ['name'],       // The property you want to search
-      threshold: 0.4,       // Adjusts the "fuzziness" (0.0 = exact match, 1.0 = match anything)
-      includeScore: true,
+    // Step 2: Apply search query filter
+    if (searchQuery.trim()) {
+      // Apply fuzzy search on the pre-filtered results
+      const fuse = new Fuse(filteredFiles, {
+        keys: ['name'],       // The property you want to search
+        threshold: 0.4,       // Adjusts the "fuzziness" (0.0 = exact match, 1.0 = match anything)
+        includeScore: true,
+      });
+
+      const results = fuse.search(searchQuery);
+      filteredFiles = results.map(result => result.item);
+    }
+
+    // ✅ NEW: Sorting Logic
+    const sortedFiles = [...filteredFiles].sort((a, b) => {
+      switch (sortBy) {
+        case 'recent':
+          // Most recent first (default) - use the first version's uploadedAt or file group's uploadedAt
+          const dateA = new Date(a.versions?.[0]?.uploadedAt || a.uploadedAt || 0);
+          const dateB = new Date(b.versions?.[0]?.uploadedAt || b.uploadedAt || 0);
+          return dateB - dateA;
+        case 'oldest':
+          // Oldest first
+          const dateA2 = new Date(a.versions?.[0]?.uploadedAt || a.uploadedAt || 0);
+          const dateB2 = new Date(b.versions?.[0]?.uploadedAt || b.uploadedAt || 0);
+          return dateA2 - dateB2;
+        case 'name-asc':
+          // A to Z
+          return (a.name || '').localeCompare(b.name || '');
+        case 'name-desc':
+          // Z to A
+          return (b.name || '').localeCompare(a.name || '');
+        case 'size-asc':
+          // Smallest first
+          const sizeA = a.versions?.[0]?.size || 0;
+          const sizeB = b.versions?.[0]?.size || 0;
+          return sizeA - sizeB;
+        case 'size-desc':
+          // Largest first
+          const sizeA2 = a.versions?.[0]?.size || 0;
+          const sizeB2 = b.versions?.[0]?.size || 0;
+          return sizeB2 - sizeA2;
+        default:
+          // Default to recent
+          const dateA3 = new Date(a.versions?.[0]?.uploadedAt || a.uploadedAt || 0);
+          const dateB3 = new Date(b.versions?.[0]?.uploadedAt || b.uploadedAt || 0);
+          return dateB3 - dateA3;
+      }
     });
 
-    const results = fuse.search(searchQuery);
+    return sortedFiles;
 
-    // Map the results from Fuse.js back to the original file format
-    return results.map(result => result.item);
-
-  }, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery, adminOwnerFilter, adminFilterMode, adminProjectFilter, userRole, isSemanticSearchActive, semanticSearchResults]);
+  }, [files, filterCategory, filterDateFrom, filterDateTo, searchQuery, adminOwnerFilter, adminFilterMode, adminProjectFilter, userRole, isSemanticSearchActive, semanticSearchResults, fileTypeFilter, sortBy]);
   // Get unique categories from files
   const uniqueCategories = [...new Set(files.map(f => f.category))].sort();
   // Get unique owners from files for admin owner filter
@@ -1548,8 +1624,8 @@ function FileList(props) {
             </div>
           )}
 
-          {/* ✨ MODERN 4-COLUMN FILTER GRID ✨ */}
-          <div style={{ display: 'grid', marginBottom: 28, gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, alignItems: 'end' }}>
+          {/* ✨ MODERN 6-COLUMN FILTER GRID ✨ */}
+          <div style={{ display: 'grid', marginBottom: 28, gridTemplateColumns: 'repeat(6, 1fr)', gap: 16, alignItems: 'end' }}>
             {/* Category Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Category</label>
@@ -1659,6 +1735,76 @@ function FileList(props) {
                   }}
                 />
               </div>
+            </div>
+
+            {/* ✅ NEW: Sort By Filter */}
+            <div>
+              <label style={{ ...label, fontSize: 13, marginBottom: 8 }}> Sort By</label>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+                style={{
+                  ...select,
+                  height: '44px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  border: '2px solid #e5e7eb',
+                  borderRadius: 10,
+                  transition: 'all 0.2s ease',
+                  cursor: 'pointer'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#4f46e5';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e5e7eb';
+                  e.target.style.boxShadow = 'none';
+                }}
+              >
+                <option value="recent">Recent First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="size-asc">Size (Small)</option>
+                <option value="size-desc">Size (Large)</option>
+              </select>
+            </div>
+
+            {/* ✅ NEW: File Type Filter */}
+            <div>
+              <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>File Type</label>
+              <select
+                value={fileTypeFilter}
+                onChange={e => setFileTypeFilter(e.target.value)}
+                style={{
+                  ...select,
+                  height: '44px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  border: '2px solid #e5e7eb',
+                  borderRadius: 10,
+                  transition: 'all 0.2s ease',
+                  cursor: 'pointer'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#4f46e5';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e5e7eb';
+                  e.target.style.boxShadow = 'none';
+                }}
+              >
+                <option value="all">📂 All Files</option>
+                <option value="pdf"> PDF Files</option>
+                <option value="ppt">PowerPoint</option>
+                <option value="doc">Word Docs</option>
+                <option value="excel">Excel Files</option>
+                <option value="image">Images</option>
+                <option value="video">Videos</option>
+                <option value="other">Other Files</option>
+              </select>
             </div>
           </div>
 
