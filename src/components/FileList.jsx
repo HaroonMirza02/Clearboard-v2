@@ -1932,42 +1932,120 @@ function FileList(props) {
 
             <div style={{ marginTop: 16 }}>
               {/* Top Action Bar */}
-              <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
-                <label
+              {/* Top Action Bar or Hero Dropzone */}
+              {filesToUpload.length === 0 ? (
+                /* HERO EMPTY STATE */
+                <div
                   style={{
-                    ...smallBtn,
-                    background: '#3b82f6',
+                    border: '2px dashed #cbd5e1',
+                    borderRadius: '16px',
+                    padding: '40px 20px',
+                    textAlign: 'center',
+                    backgroundColor: '#f8fafc',
+                    transition: 'all 0.2s ease',
                     cursor: readOnlyMode ? 'not-allowed' : 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8
+                    position: 'relative'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!readOnlyMode) {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                      e.currentTarget.style.backgroundColor = '#eff6ff';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!readOnlyMode) {
+                      e.currentTarget.style.borderColor = '#cbd5e1';
+                      e.currentTarget.style.backgroundColor = '#f8fafc';
+                    }
                   }}
                 >
-                  <span style={{ fontSize: 18 }}>+</span> Add Files
-                  <input
-                    type="file"
-                    multiple
-                    disabled={readOnlyMode}
-                    onChange={handleFileSelect}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-
-                {filesToUpload.length > 0 && (
-                  <div style={{ fontSize: 14, color: '#64748b' }}>
-                    {filesToUpload.length} file{filesToUpload.length !== 1 ? 's' : ''} selected
-                  </div>
-                )}
-
-                {filesToUpload.length > 0 && (
-                  <button
-                    onClick={() => setFilesToUpload([])}
-                    style={{ ...toggleBtn, color: '#ef4444', textDecoration: 'none', marginLeft: 'auto', fontSize: 14, fontWeight: 600 }}
+                  <label htmlFor="hero-upload" style={{ cursor: readOnlyMode ? 'not-allowed' : 'pointer', display: 'block', width: '100%', height: '100%' }}>
+                    <div style={{
+                      width: '64px',
+                      height: '64px',
+                      background: '#e0e7ff',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 16px',
+                      color: '#4f46e5'
+                    }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </div>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: '0 0 8px' }}>
+                      Upload your documents
+                    </h3>
+                    <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 24px' }}>
+                      Click to browse files (PDF, DOCX, PPTX, Images, etc.)
+                    </p>
+                    <span style={{
+                      padding: '10px 24px',
+                      background: '#3b82f6',
+                      color: '#fff',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      display: 'inline-block',
+                      boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.5)'
+                    }}>
+                      Browse Files
+                    </span>
+                    <input
+                      id="hero-upload"
+                      type="file"
+                      multiple
+                      disabled={readOnlyMode}
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+              ) : (
+                /* COMPACT BAR FOR ACTIVE UPLOAD */
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', animation: 'fadeIn 0.3s ease' }}>
+                  <label
+                    style={{
+                      ...smallBtn,
+                      background: '#3b82f6',
+                      cursor: readOnlyMode ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 16px',
+                      fontSize: '14px'
+                    }}
                   >
-                    Clear All
-                  </button>
-                )}
-              </div>
+                    <span style={{ fontSize: 18 }}>+</span> Add More Files
+                    <input
+                      type="file"
+                      multiple
+                      disabled={readOnlyMode}
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+
+                  {filesToUpload.length > 0 && (
+                    <div style={{ fontSize: 14, color: '#64748b' }}>
+                      {filesToUpload.length} file{filesToUpload.length !== 1 ? 's' : ''} selected
+                    </div>
+                  )}
+
+                  {filesToUpload.length > 0 && (
+                    <button
+                      onClick={() => setFilesToUpload([])}
+                      style={{ ...toggleBtn, color: '#ef4444', textDecoration: 'none', marginLeft: 'auto', fontSize: 14, fontWeight: 600 }}
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* File List Table */}
               {filesToUpload.length > 0 && (
