@@ -117,10 +117,12 @@ function Navbar() {
                         className="cb-logo"
                     />
                 </Link>
-                <ul className="cb-nav-links">
-                    <li><a href="/#features">Features</a></li>
-                    <li><a href="/about">About</a></li>
-                </ul>
+                {!currentUser.id && (
+                    <ul className="cb-nav-links">
+                        <li><a href="/#features">Features</a></li>
+                        <li><a href="/about">About</a></li>
+                    </ul>
+                )}
             </div>
             <div className="cb-nav-right">
                 {currentUser.id ? (

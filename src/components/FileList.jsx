@@ -481,7 +481,7 @@ const statValue = { fontSize: 32, fontWeight: 500, color: '#1f2a37', marginBotto
 const statSub = { fontSize: 13, color: '#10b981' };
 
 const tableWrap = { ...sectionCard, padding: 0 };
-const tableStyle = { width: '100%', borderCollapse: 'separate', borderSpacing: 0 };
+const tableStyle = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' };
 const thStyle = { background: '#fff', color: '#222', fontWeight: 600, padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb', fontSize: 12, letterSpacing: 0.1, verticalAlign: 'middle', height: 32, boxSizing: 'border-box' };
 const tdStyle = { padding: '8px 10px', borderBottom: '1px solid #f3f4f6', borderRight: '1px solid #f3f4f6', verticalAlign: 'middle', textAlign: 'center', fontSize: 12, color: '#222', background: '#fff', height: 32, boxSizing: 'border-box' };
 const zebra = idx => ({ background: idx % 2 === 0 ? '#fff' : '#fafbff' });
@@ -2834,7 +2834,7 @@ function FileList(props) {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>
+                <th style={{ ...thStyle, width: '40px' }}>
                   <input
                     type="checkbox"
                     checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
@@ -2844,16 +2844,16 @@ function FileList(props) {
                   />
                 </th>
                 <th style={thStyle}>File Name</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Size (KB)</th>
-                <th style={thStyle}>Compression</th>
-                <th style={thStyle}>Category</th>
-                <th style={thStyle}>Version</th>
-                {userRole === 'admin' && <th style={thStyle}>Owner</th>}
-                <th style={thStyle}>Uploaded</th>
-                <th style={thStyle}>Modified</th>
-                <th style={thStyle}>File Creation</th>
-                <th style={thStyle}>Action</th>
+                <th style={{ ...thStyle, width: '80px' }}>Type</th>
+                <th style={{ ...thStyle, width: '100px' }}>Size (KB)</th>
+                <th style={{ ...thStyle, width: '100px' }}>Compression</th>
+                <th style={{ ...thStyle, width: '140px' }}>Category</th>
+                <th style={{ ...thStyle, width: '80px' }}>Version</th>
+                {userRole === 'admin' && <th style={{ ...thStyle, width: '100px' }}>Owner</th>}
+                <th style={{ ...thStyle, width: '100px' }}>Uploaded</th>
+                <th style={{ ...thStyle, width: '90px' }}>Modified</th>
+                <th style={{ ...thStyle, width: '100px' }}>File Creation</th>
+                <th style={{ ...thStyle, width: '50px' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -2891,14 +2891,19 @@ function FileList(props) {
                         style={{ cursor: 'pointer' }}
                       />
                     </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', overflow: 'hidden' }}>
                         <span
                           style={{
                             cursor: 'pointer',
                             color: '#1f2937',
                             fontWeight: 500,
                             transition: 'color 0.2s ease',
+                            flex: 1,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            minWidth: 0
                           }}
                           onMouseEnter={(e) => e.target.style.color = '#4f46e5'}
                           onMouseLeave={(e) => e.target.style.color = '#1f2937'}
@@ -2916,7 +2921,7 @@ function FileList(props) {
                             padding: '2px 6px'
                           }}>SHARED</span>
                         )}
-                        {!fileGroup.isOwner && (
+                        {/* {!fileGroup.isOwner && (
                           <span style={{
                             ...pill,
                             background: '#fef3c7',
@@ -2924,7 +2929,7 @@ function FileList(props) {
                             fontSize: '10px',
                             padding: '2px 6px'
                           }}>TEAM FILE</span>
-                        )}
+                        )} */}
                       </div>
                     </td>
                     <td style={tdStyle}><span style={{ ...pill, background: '#eef2ff', color: '#4338ca' }}>{displayedVersion.fileType || 'N/A'}</span></td>
