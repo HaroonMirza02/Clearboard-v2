@@ -3,12 +3,158 @@ import { API_ENDPOINTS } from '../utils/api';
 import { useNavigate, useLocation } from 'react-router-dom'; // ✅ UPDATED: include useLocation
 import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import Fuse from 'fuse.js';
+import * as pdfjsLib from 'pdfjs-dist'; // ✅ NEW: PDF.js for first page preview
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 import '../styles/Calendar.css'; // Professional calendar picker styling
 import AdminUserFilter from './AdminUserFilter';
 import SemanticSearchBar from './SemanticSearchBar'; // ✅ NEW: Semantic search component
 import ModernDatePicker from './ModernDatePicker'; // ✅ NEW: Modern calendar picker
+
+// ✅ Configure PDF.js worker - using local worker from node_modules
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
+
+// ✅ PDF First Page Preview Component
+const PDFFirstPagePreview = ({ url, name }) => {
+  const canvasRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [canvasKey, setCanvasKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderPDF = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Force new canvas by updating key
+        setCanvasKey(prev => prev + 1);
+
+        // Small delay to ensure canvas is recreated
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (cancelled) return;
+
+        // Load the PDF document
+        const loadingTask = pdfjsLib.getDocument(url);
+        const pdf = await loadingTask.promise;
+
+        if (cancelled) return;
+
+        // Get only the first page
+        const page = await pdf.getPage(1);
+
+        if (cancelled) return;
+
+        // Prepare canvas
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+
+        // Calculate scale to make PDF readable
+        const container = canvas.parentElement;
+        const containerWidth = container?.clientWidth || 900;
+
+        const viewport = page.getViewport({ scale: 1 });
+
+        // Scale based on width, ensuring minimum readable size
+        const widthScale = (containerWidth * 0.9) / viewport.width;
+        const scale = Math.max(Math.min(widthScale, 2.0), 1.0); // Between 1.0 and 2.0
+
+        const scaledViewport = page.getViewport({ scale });
+
+        // Set canvas dimensions
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+
+        // Render the page
+        const renderContext = {
+          canvasContext: context,
+          viewport: scaledViewport
+        };
+
+        await page.render(renderContext).promise;
+
+        if (!cancelled) {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error rendering PDF:', err);
+          setError('Failed to load PDF preview');
+          setLoading(false);
+        }
+      }
+    };
+
+    if (url) {
+      renderPDF();
+    }
+
+    // Cleanup function
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return (
+    <div style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      background: '#2a2a2a',
+      padding: '20px',
+      overflow: 'auto'
+    }}>
+      {loading && (
+        <div style={{
+          textAlign: 'center',
+          color: '#9ca3af'
+        }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #333',
+            borderTopColor: '#3b82f6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }}></div>
+          <p>Loading first page...</p>
+        </div>
+      )}
+      {error && (
+        <div style={{
+          textAlign: 'center',
+          color: '#ef4444'
+        }}>
+          <p>{error}</p>
+        </div>
+      )}
+      <canvas
+        key={canvasKey}
+        ref={canvasRef}
+        style={{
+          maxWidth: '100%',
+          height: 'auto',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+          borderRadius: '8px',
+          display: loading || error ? 'none' : 'block'
+        }}
+      />
+
+    </div>
+  );
+};
 
 const TEAM_CATEGORIES = {
   'Software Development': ['WebDev Assets', 'General Research', 'Project Demo', 'Source Code'],
@@ -1154,7 +1300,11 @@ function FileList(props) {
     try {
       const urlPath = API_ENDPOINTS.DOWNLOAD(fileId, version);
       const res = await fetch(urlPath, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error('Preview failed');
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Preview failed:', res.status, errorText);
+        throw new Error(`Preview failed: ${res.status}`);
+      }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
 
@@ -1166,7 +1316,8 @@ function FileList(props) {
         url
       });
     } catch (err) {
-      setError('Preview failed');
+      console.error('Preview error:', err);
+      setError(err.message || 'Preview failed');
       setIsPreviewModalOpen(false);
     } finally {
       setPreviewLoading(false);
@@ -2103,7 +2254,14 @@ function FileList(props) {
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span
-                          style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
+                          style={{
+                            cursor: 'pointer',
+                            color: '#1f2937',
+                            fontWeight: 500,
+                            transition: 'color 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => e.target.style.color = '#4f46e5'}
+                          onMouseLeave={(e) => e.target.style.color = '#1f2937'}
                           onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}
                           title="Click to preview"
                         >
@@ -2377,7 +2535,7 @@ function FileList(props) {
               flex: 1,
               overflow: 'auto',
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               justifyContent: 'center',
               padding: '20px',
               background: '#1a1a1a',
@@ -2390,7 +2548,10 @@ function FileList(props) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#fff'
+                  color: '#fff',
+                  width: '100%',
+                  height: '100%',
+                  minHeight: '400px'
                 }}>
                   <div style={{
                     width: '50px',
@@ -2407,20 +2568,10 @@ function FileList(props) {
                 (() => {
                   const fileType = previewFileData.fileType?.toLowerCase();
 
-                  // PDF Preview
+                  // PDF Preview - First Page Only
                   if (fileType === 'pdf') {
                     return (
-                      <iframe
-                        src={previewFileData.url}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          minHeight: '600px',
-                          border: 'none',
-                          background: '#2a2a2a'
-                        }}
-                        title={`Preview of ${previewFileData.name}`}
-                      />
+                      <PDFFirstPagePreview url={previewFileData.url} name={previewFileData.name} />
                     );
                   }
 
@@ -2498,32 +2649,16 @@ function FileList(props) {
                           src={previewFileData.url}
                           controls
                           style={{
-                            width: '100%',
-                            marginBottom: '16px'
+                            width: '100%'
                           }}
                         >
                           Your browser does not support audio playback.
                         </audio>
-                        <button
-                          onClick={() => handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version)}
-                          style={{
-                            padding: '10px 20px',
-                            background: '#3b82f6',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                            fontSize: '14px'
-                          }}
-                        >
-                          Download File
-                        </button>
                       </div>
                     );
                   }
 
-                  // Unsupported file types - show download option
+                  // Unsupported file types
                   return (
                     <div style={{
                       textAlign: 'center',
@@ -2543,32 +2678,10 @@ function FileList(props) {
                       </h3>
                       <p style={{
                         color: '#9ca3af',
-                        marginBottom: '24px',
                         fontSize: '14px'
                       }}>
                         This file type cannot be previewed in the browser.
                       </p>
-                      <button
-                        onClick={() => {
-                          handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version);
-                          handleClosePreview();
-                        }}
-                        style={{
-                          padding: '12px 24px',
-                          background: '#3b82f6',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                          fontSize: '15px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.target.style.background = '#2563eb'}
-                        onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
-                      >
-                        Download File
-                      </button>
                     </div>
                   );
                 })()
@@ -2582,44 +2695,7 @@ function FileList(props) {
               )}
             </div>
 
-            {/* Footer Actions */}
-            {previewFileData && !previewLoading && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: '12px',
-                padding: '16px 20px',
-                background: '#252525',
-                borderTop: '1px solid #333',
-                flexShrink: 0
-              }}>
-                <button
-                  onClick={() => {
-                    handleDownload(previewFileData.fileId, previewFileData.name, previewFileData.fileType, previewFileData.version);
-                  }}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#3b82f6',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '14px',
-                    transition: 'background 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                  onMouseEnter={(e) => e.target.style.background = '#2563eb'}
-                  onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
-                >
-                  <span>⬇️</span>
-                  <span>Download</span>
-                </button>
-              </div>
-            )}
+
           </div>
         </div>
       )}
