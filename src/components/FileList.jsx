@@ -749,12 +749,8 @@ function FileList(props) {
 
   const removeFile = (index) => {
     setFilesToUpload(prev => prev.filter((_, i) => i !== index));
-    // Clear file validation error if present
-    setValidationErrors(prev => {
-      const newErrors = { ...prev };
-      delete newErrors.file;
-      return newErrors;
-    });
+    // Clear all validation errors to prevent stale error states
+    setValidationErrors({});
   };
 
   const handleFileSelect = (e) => {
@@ -794,12 +790,12 @@ function FileList(props) {
     }));
 
     // Clear specific validation error if fixed
-    if (field === 'category' && value) {
+    if (value) {
       setValidationErrors(prev => {
         const newErrors = { ...prev };
-        // We might need a more complex error structure for per-row errors, 
-        // but for now clearing the global category error (if we repurpose it) works as a start.
-        // Better: we'll handle validation dynamically in the render or specifically.
+        if (field === 'category') delete newErrors.category;
+        if (field === 'compress') delete newErrors.compress;
+        if (field === 'fileCreatedAt') delete newErrors.fileCreatedAt;
         return newErrors;
       });
     }
@@ -1581,8 +1577,53 @@ function FileList(props) {
       setShowSuccessNotification(false);
     }, 3000);
   };
-  // In FileList.jsx
-  // REPLACE your old handleUpload function with this one
+
+
+  /* ✅ NEW: Success buzzer sound using Web Audio API */
+  const playSuccessSound = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+
+      const ctx = new AudioContext();
+
+      // Create oscillator for the main tone
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // A pleasant "success chime" (High C -> E -> G arpeggio feel, or just a nice glissando)
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.1); // C6
+
+      // Envelope to make it sound like a bell/chime
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 1.5);
+
+      // Add a second harmonic for richness
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(523.25 * 1.5, ctx.currentTime); // G5
+      gain2.gain.setValueAtTime(0, ctx.currentTime);
+      gain2.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.02);
+      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.0);
+      osc2.start(ctx.currentTime);
+      osc2.stop(ctx.currentTime + 1.0);
+
+    } catch (e) {
+      console.error("Audio play failed", e);
+    }
+  };
   // In FileList.jsx
   // This is the final, merged version of the function
 
@@ -1635,7 +1676,12 @@ function FileList(props) {
           formData.append('file', fileItem.file);
 
           xhr.open('POST', API_ENDPOINTS.UPLOAD, true);
-          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          // Robustly get token
+          let authToken = token;
+          if (!authToken) {
+            authToken = localStorage.getItem('token');
+          }
+          xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
 
           xhr.upload.addEventListener('progress', (event) => {
             if (event.lengthComputable) {
@@ -1686,6 +1732,7 @@ function FileList(props) {
       setFileCreatedAt(today);
 
       showSuccessMessage();
+      playSuccessSound(); // ✅ Play sound on success
       await fetchFiles();
 
     } catch (err) {
