@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import ReCAPTCHA from 'react-google-recaptcha';
 import '../styles/auth.css';
 import { API_ENDPOINTS } from '../utils/api';
+import GoogleSignInButton from './GoogleSignInButton';
 
 function Login({ onLogin }) {
   const [userId, setUserId] = useState('');
@@ -59,14 +60,14 @@ function Login({ onLogin }) {
       localStorage.setItem('role', data.role);
       if (data.department) localStorage.setItem('department', data.department);
       if (data.userId) localStorage.setItem('userId', data.userId);
-      
+
       // Calculate and store the exact time the session should expire
       const expiryTime = new Date().getTime() + 15 * 60 * 1000; // 15 minutes from now
       localStorage.setItem('sessionExpiry', expiryTime);
 
       try {
         window.dispatchEvent(new Event('auth-changed'));
-      } catch {}
+      } catch { }
 
       if (onLogin) onLogin();
 
@@ -109,6 +110,16 @@ function Login({ onLogin }) {
     <div className="auth-container">
       <div className="auth-header">
         <h2>Login</h2>
+      </div>
+
+      {/* Google Sign-In Button */}
+      <div style={{ marginBottom: '20px' }}>
+        <GoogleSignInButton />
+      </div>
+
+      {/* Divider */}
+      <div className="auth-divider">
+        <span>OR</span>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>

@@ -80,6 +80,27 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
+// Session middleware for passport
+const session = require('express-session');
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'supersecretkey123',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Initialize Passport
+const { passport, initializePassport } = require('./config/passport');
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Note: Passport will be fully initialized after user management functions are defined below
+
+
 // Ensure uploads directory exists (for any residual temp needs)
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -145,6 +166,14 @@ if (mailer) {
     console.warn('SMTP verify failed:', e?.message || e);
   });
 }
+
+// Initialize Passport with user management functions
+initializePassport(getAllUsers, loadUsers, saveUsers);
+
+// Initialize and mount auth routes for Google OAuth
+const { router: authRoutes, initializeAuthRoutes } = require('./routes/auth');
+initializeAuthRoutes(getAllUsers, loadUsers, saveUsers);
+app.use('/api/auth', authRoutes);
 
 // -------- Email Templates (HTML) --------
 const EMAIL_BRAND = 'ClearBoard';
@@ -1940,8 +1969,13 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(status).json({ message, error: message });
 });
 
+// Health check endpoint for GCP Cloud Run
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Temp uploads directory: ${UPLOADS_DIR}`);
   console.log(`Metadata stored in GCS: ${META_GCS_KEY}`);
@@ -1949,13 +1983,27 @@ app.listen(PORT, async () => {
   console.log(`Frontend URL for download links: ${FRONTEND_URL}`);
   console.log('System is fully cloud-based');
 
-  // Initialize semantic search service
-  try {
-    console.log('Initializing semantic search service...');
-    await initializeSemanticSearch();
-    console.log('✓ Semantic search service ready');
-  } catch (error) {
-    console.error('⚠ Semantic search initialization failed:', error.message);
-    console.error('  Search functionality will be limited');
-  }
+  // Initialize semantic search service in background (non-blocking)
+  // Model is pre-cached in Docker image, so this should be fast
+  setImmediate(async () => {
+    try {
+      console.log('Initializing semantic search service...');
+
+      // Add timeout to prevent hanging (should be fast with pre-cached model)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Initialization timeout after 90s')), 90000)
+      );
+
+      await Promise.race([
+        initializeSemanticSearch(),
+        timeoutPromise
+      ]);
+
+      console.log('✓ Semantic search service ready');
+    } catch (error) {
+      console.error('⚠ Semantic search initialization failed:', error.message);
+      console.error('  Search functionality will be limited');
+      console.error('  Server will continue running without semantic search');
+    }
+  });
 });

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { API_ENDPOINTS } from '../utils/api';
 import '../styles/auth.css';
+import GoogleSignInButton from './GoogleSignInButton';
 
 function Signup() {
   const [userId, setUserId] = useState('');
@@ -129,6 +130,16 @@ function Signup() {
     <div className="auth-container">
       <div className="auth-header">
         <h2>Create Account</h2>
+      </div>
+
+      {/* Google Sign-In Button */}
+      <div style={{ marginBottom: '20px' }}>
+        <GoogleSignInButton />
+      </div>
+
+      {/* Divider */}
+      <div className="auth-divider">
+        <span>OR</span>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>

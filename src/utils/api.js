@@ -25,6 +25,11 @@ export const API_ENDPOINTS = {
   FORGOT_PASSWORD: `${API_BASE_URL}/api/auth/forgot-password`,
   CHANGE_PASSWORD: `${API_BASE_URL}/api/auth/change-password`,
   RESET_PASSWORD: `${API_BASE_URL}/api/auth/reset-password`,
+
+  // Google OAuth endpoints
+  GOOGLE_AUTH: `${API_BASE_URL}/api/auth/google`,
+  UPDATE_DEPARTMENT: `${API_BASE_URL}/api/auth/update-department`,
+
   FILES: `${API_BASE_URL}/api/files`,
   UPLOAD: `${API_BASE_URL}/api/files/upload`,
   DOWNLOAD: (fileId, version = null) => {
