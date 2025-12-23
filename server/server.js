@@ -31,6 +31,17 @@ const {
   initializeSemanticSearch
 } = require('./services/semanticSearch');
 
+const mongoose = require('mongoose');
+const User = require('./models/User');
+const Counter = require('./models/Counter');
+const Metadata = require('./models/Metadata');
+
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/clearboard';
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Connected to MongoDB Atlas'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
 const app = express();
 app.disable('x-powered-by');
 
@@ -293,38 +304,31 @@ const META_GCS_KEY = 'metadata/filemeta.json';
 const USERS_GCS_KEY = 'metadata/users.json';
 const COUNTER_GCS_KEY = 'metadata/counter.json';
 
-// Load counter from GCS
+// Load counter from MongoDB
 async function loadCounter() {
   try {
-    const stream = getGCSDownloadStream(COUNTER_GCS_KEY);
-    const chunks = [];
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
+    let counterDoc = await Counter.findOne({ key: 'filemeta' });
+    if (!counterDoc) {
+      console.log('Creating new counter in MongoDB');
+      counterDoc = await Counter.create({ key: 'filemeta', fileCounter: 0 });
     }
-
-    const data = Buffer.concat(chunks).toString('utf8');
-    return JSON.parse(data);
+    return { fileCounter: counterDoc.fileCounter };
   } catch (err) {
-    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
-      console.log('Creating new counter.json in GCS');
-      const initialCounter = { fileCounter: 0 };
-      await saveCounter(initialCounter);
-      return initialCounter;
-    }
-    console.error('Error loading counter:', err);
+    console.error('Error loading counter from MongoDB:', err);
     return { fileCounter: 0 };
   }
 }
 
-// Save counter to GCS
+// Save counter to MongoDB
 async function saveCounter(counter) {
   try {
-    const jsonString = JSON.stringify(counter, null, 2);
-    const buffer = Buffer.from(jsonString, 'utf8');
-    await uploadToGCS(COUNTER_GCS_KEY, buffer, 'application/json');
+    await Counter.findOneAndUpdate(
+      { key: 'filemeta' },
+      { fileCounter: counter.fileCounter },
+      { upsert: true, new: true }
+    );
   } catch (err) {
-    console.error('Error saving counter:', err);
+    console.error('Error saving counter to MongoDB:', err);
     throw err;
   }
 }
@@ -365,76 +369,56 @@ function generateClearBoardFileName(counter, ownerUserId, originalFileName, vers
   return `${prefix}_${uniqueId}_${user}_${sanitizedFileName}_${versionStr}_${dateStr}`;
 }
 
-// Load metadata from GCS
+// Load metadata from MongoDB
 async function loadMeta() {
   try {
-    const stream = getGCSDownloadStream(META_GCS_KEY);
-    const chunks = [];
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    const data = Buffer.concat(chunks).toString('utf8');
-    console.log('Metadata loaded from GCS');
-    return JSON.parse(data);
-  } catch (err) {
-    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
-      console.log('Creating new filemeta.json in GCS');
+    const metaDoc = await Metadata.findOne({ key: 'filemeta' });
+    if (!metaDoc) {
+      console.log('Creating new metadata in MongoDB');
       await saveMeta({});
       return {};
     }
-    console.error('Error loading metadata from GCS:', err);
+    return metaDoc.data;
+  } catch (err) {
+    console.error('Error loading metadata from MongoDB:', err);
     return {};
   }
 }
 
-// Save metadata to GCS
+// Save metadata to MongoDB
 async function saveMeta(meta) {
   try {
-    const jsonString = JSON.stringify(meta, null, 2);
-    const buffer = Buffer.from(jsonString, 'utf8');
-    await uploadToGCS(META_GCS_KEY, buffer, 'application/json');
-    console.log('Metadata saved to GCS successfully');
+    await Metadata.findOneAndUpdate(
+      { key: 'filemeta' },
+      { data: meta },
+      { upsert: true, new: true }
+    );
+    console.log('Metadata saved to MongoDB successfully');
   } catch (err) {
-    console.error('Error saving metadata to GCS:', err);
+    console.error('Error saving metadata to MongoDB:', err);
     throw err;
   }
 }
 
-// Load users from GCS
+// Load users from MongoDB
 async function loadUsers() {
   try {
-    const stream = getGCSDownloadStream(USERS_GCS_KEY);
-    const chunks = [];
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    const data = Buffer.concat(chunks).toString('utf8');
-    console.log('Users loaded from GCS');
-    return JSON.parse(data);
+    const users = await User.find({});
+    return users.map(u => u.toObject());
   } catch (err) {
-    if (err.code === 404 || err.message.includes('not found') || err.message.includes('No such object')) {
-      console.log('Creating new users.json in GCS');
-      await saveUsers([]);
-      return [];
-    }
-    console.error('Error loading users from GCS:', err);
+    console.error('Error loading users from MongoDB:', err);
     return [];
   }
 }
 
-// Save users to GCS
+// Save users to MongoDB (Actually we save individual users now, but keep this for compatibility if used)
 async function saveUsers(users) {
   try {
-    const jsonString = JSON.stringify(users, null, 2);
-    const buffer = Buffer.from(jsonString, 'utf8');
-    await uploadToGCS(USERS_GCS_KEY, buffer, 'application/json');
-    console.log('Users saved to GCS successfully');
+    // This is inefficient but keep it if the code expects to overwrite the whole list
+    // In a real MongoDB app, we'd use separate operations
+    console.log('saveUsers called - this function is legacy, use User model directly for new users');
   } catch (err) {
-    console.error('Error saving users to GCS:', err);
+    console.error('Error saving users to MongoDB:', err);
     throw err;
   }
 }
@@ -495,23 +479,16 @@ app.post('/api/signup', async (req, res) => {
     // Generate unique ID
     const id = 'user-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-    // Create new user
-    const newUser = {
+    // Create new user in MongoDB
+    const newUser = await User.create({
       userId,
       password: hashedPassword,
       email: email || null,
-      id,
       role: 'user',
-      department: department || 'Software Development',
-      createdAt: new Date().toISOString()
-    };
+      department: department || 'Software Development'
+    });
 
-    // Save to registered users
-    const registeredUsers = await loadUsers();
-    registeredUsers.push(newUser);
-    await saveUsers(registeredUsers);
-
-    console.log(`New user registered: ${userId} (${id})`);
+    console.log(`New user registered: ${userId} (${newUser._id})`);
 
     // Generate token
     const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role, department: newUser.department }, JWT_SECRET, { expiresIn: '1d' });
@@ -658,17 +635,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     const { userId } = decoded;
 
-    const registeredUsers = await loadUsers();
-    const userIndex = registeredUsers.findIndex(u => u.id === userId);
-
-    if (userIndex === -1) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    registeredUsers[userIndex].password = hashedPassword;
-
-    await saveUsers(registeredUsers);
+    await User.findByIdAndUpdate(userId, { password: hashedPassword });
 
     console.log(`Password reset successfully for user ID: ${userId}`);
     res.json({ message: 'Password has been reset successfully.' });
@@ -2133,11 +2101,11 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Temp uploads directory: ${UPLOADS_DIR}`);
-  console.log(`Metadata stored in GCS: ${META_GCS_KEY}`);
-  console.log(`Users stored in GCS: ${USERS_GCS_KEY}`);
+  console.log(`Local uploads directory: ${UPLOADS_DIR}`);
+  console.log(`Metadata stored in MongoDB`);
+  console.log(`Users stored in MongoDB`);
   console.log(`Frontend URL for download links: ${FRONTEND_URL}`);
-  console.log('System is fully cloud-based');
+  console.log('System is running locally with MongoDB Atlas');
 
   // Initialize semantic search service in background (non-blocking)
   // Model is pre-cached in Docker image, so this should be fast

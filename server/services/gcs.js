@@ -1,131 +1,81 @@
 
-// Google Cloud Storage helper
-const { Storage } = require('@google-cloud/storage');
+// Local storage helper (using local filesystem instead of GCS)
+const fs = require('fs');
+const path = require('path');
 const stream = require('stream');
-const BUCKET_NAME = process.env.GCS_BUCKET_NAME;
 
-// Initialize storage with credentials from environment variables
-const storage = new Storage();
-const bucketName = process.env.GCS_BUCKET_NAME || 'clearboard';
-
-console.log('Using GCS bucket:', bucketName);
-
-// Get bucket reference
-function getBucket() {
-  return storage.bucket(bucketName);
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Upload a buffer to GCS
+console.log('Using local storage in:', UPLOADS_DIR);
+
+function getLocalPath(filename) {
+  return path.join(UPLOADS_DIR, filename);
+}
+
+// Upload a buffer to local storage
 function uploadToGCS(filename, buffer, contentType) {
   return new Promise((resolve, reject) => {
-    const bucket = getBucket();
-    const file = bucket.file(filename);
-    const options = {
-      contentType,
-      metadata: {
-        contentType,
-      }
-    };
-
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-
-    bufferStream
-      .pipe(file.createWriteStream(options))
-      .on('error', reject)
-      .on('finish', () => {
-        resolve(filename);
-      });
+    const fullPath = getLocalPath(filename);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFile(fullPath, buffer, (err) => {
+      if (err) return reject(err);
+      resolve(filename);
+    });
   });
 }
 
-// Get a download stream from GCS
+// Get a download stream from local storage
 function getGCSDownloadStream(filename) {
-  const bucket = getBucket();
-  const file = bucket.file(filename);
-  return file.createReadStream();
+  const fullPath = getLocalPath(filename);
+  return fs.createReadStream(fullPath);
 }
 
-// Get a signed URL for direct browser download
+// Get a "signed URL" (locally just a direct URL or local path)
+// In a real local setup, this might be a path that the express app serves as static
 function getSignedUrl(filename, expiresInMinutes = 15) {
-  const bucket = getBucket();
-  const file = bucket.file(filename);
-
-  return file.getSignedUrl({
-    action: 'read',
-    expires: Date.now() + expiresInMinutes * 60 * 1000
-  }).then(urls => urls[0]);
+  // For local development, we return a URL that the server can serve
+  // We'll assume the server serves 'uploads' at '/api/files/download-local/:filename'
+  // Or just return a placeholder for now
+  return Promise.resolve(`/api/files/download-raw/${filename}`);
 }
 
-// Get file metadata including size (with retry for eventual consistency)
-async function getFileMetadata(filename, retries = 3, delay = 1000) {
-  const bucket = getBucket();
-  const file = bucket.file(filename);
-
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      // First check if file exists
-      const [exists] = await file.exists();
-      if (!exists) {
-        if (attempt < retries) {
-          console.log(`File ${filename} not found yet, retrying (${attempt}/${retries})...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        throw new Error(`File not found in GCS after ${retries} attempts: ${filename}`);
-      }
-
-      // Get metadata
-      const [metadata] = await file.getMetadata();
-      return {
-        size: parseInt(metadata.size, 10),
-        contentType: metadata.contentType,
-        timeCreated: metadata.timeCreated,
-        updated: metadata.updated
-      };
-    } catch (error) {
-      if (attempt < retries && (error.code === 404 || error.message.includes('not found'))) {
-        console.log(`Error getting metadata for ${filename}, retrying (${attempt}/${retries})...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      throw error;
-    }
+// Get file metadata
+async function getFileMetadata(filename) {
+  const fullPath = getLocalPath(filename);
+  if (!fs.existsSync(fullPath)) {
+    throw new Error(`File not found: ${filename}`);
   }
+  const stats = fs.statSync(fullPath);
+  return {
+    size: stats.size,
+    contentType: 'application/octet-stream', // Could use mime-types package
+    timeCreated: stats.birthtime,
+    updated: stats.mtime
+  };
 }
 
 async function deleteFromGCS(gcsObjectKey) {
-  try {
-    const bucket = getBucket();
-    await bucket.file(gcsObjectKey).delete();
-    console.log(`Successfully deleted gs://${bucket.name}/${gcsObjectKey}`);
-    return true;
-  } catch (error) {
-    console.error(`Failed to delete file from GCS: ${gcsObjectKey}`, error);
-    // Don't throw if the file doesn't exist (code 404)
-    if (error.code === 404) {
-      console.warn('File was already deleted or not found in GCS.');
-      return true;
-    }
-    throw error;
+  const fullPath = getLocalPath(gcsObjectKey);
+  if (fs.existsSync(fullPath)) {
+    fs.unlinkSync(fullPath);
   }
+  return true;
 }
 
-// Create a write stream to GCS
+// Create a write stream to local storage
 function createGCSWriteStream(filename, contentType, opts = {}) {
-  const bucket = getBucket();
-  const file = bucket.file(filename);
-  const {
-    resumable = true,
-    metadata = {},
-    validation = 'crc32c'
-  } = opts;
-  return file.createWriteStream({
-    contentType,
-    resumable,
-    metadata: { contentType, ...metadata },
-    validation
-  });
+  const fullPath = getLocalPath(filename);
+  const dir = path.dirname(fullPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return fs.createWriteStream(fullPath);
 }
 
 module.exports = {

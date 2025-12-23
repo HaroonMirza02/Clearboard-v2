@@ -400,4 +400,25 @@ router.post('/unshare/:fileId', auth, async (req, res, next) => {
   }
 });
 
+// Local file download (raw)
+router.get('/download-raw/*', async (req, res, next) => {
+  try {
+    const filename = req.params[0];
+    const { getGCSDownloadStream } = require('../services/gcs');
+    const stream = getGCSDownloadStream(filename);
+
+    stream.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        res.status(404).json({ message: 'File not found locally' });
+      } else {
+        next(err);
+      }
+    });
+
+    stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
