@@ -35,6 +35,8 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const Counter = require('./models/Counter');
 const Metadata = require('./models/Metadata');
+const Company = require('./models/Company');
+const emailService = require('./services/email');
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/clearboard';
@@ -185,6 +187,10 @@ initializePassport(getAllUsers, loadUsers, saveUsers);
 const { router: authRoutes, initializeAuthRoutes } = require('./routes/auth');
 initializeAuthRoutes(getAllUsers, loadUsers, saveUsers);
 app.use('/api/auth', authRoutes);
+
+// Organization routes
+const orgRoutes = require('./routes/org');
+app.use('/api/org', orgRoutes);
 
 // -------- Email Templates (HTML) --------
 const EMAIL_BRAND = 'ClearBoard';
@@ -432,19 +438,11 @@ async function getAllUsers() {
 // Signup endpoint
 app.post('/api/signup', async (req, res) => {
   try {
-    const { userId, password, email, department, verificationToken } = req.body;
+    const { userId, password, email, department, verificationToken, createOrganization, organizationName, invitedMembers, customMessage } = req.body;
 
     // Validation
     if (!userId || !password) {
       return res.status(400).json({ message: 'User ID and password are required' });
-    }
-
-    if (userId.length < 3) {
-      return res.status(400).json({ message: 'User ID must be at least 3 characters' });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters' });
     }
 
     // Require verified email via OTP
@@ -460,15 +458,9 @@ app.post('/api/signup', async (req, res) => {
       return res.status(403).json({ message: 'Invalid or expired verification token' });
     }
 
-    // Admin signups are forbidden
-    if (String(department).toLowerCase() === 'admin') {
-      return res.status(403).json({ message: 'Admin signup is disabled' });
-    }
-
     // Check if user already exists
     const allUsers = await getAllUsers();
     const existingUser = allUsers.find(u => u.userId.toLowerCase() === userId.toLowerCase());
-
     if (existingUser) {
       return res.status(409).json({ message: 'User ID already exists' });
     }
@@ -476,29 +468,71 @@ app.post('/api/signup', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate unique ID
-    const id = 'user-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    let companyId = req.body.companyId;
+
+    // Handle Organization Creation
+    if (createOrganization && organizationName) {
+      const slug = organizationName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const newCompany = await Company.create({
+        name: organizationName,
+        tenantId: slug,
+        slug: slug,
+        settings: {
+          maxUsers: 50,
+          allowedFileTypes: [],
+          maxFileSize: 100 * 1024 * 1024 // 100MB default
+        }
+      });
+      companyId = newCompany._id;
+    }
 
     // Create new user in MongoDB
     const newUser = await User.create({
       userId,
       password: hashedPassword,
       email: email || null,
-      role: 'user',
+      role: (createOrganization && organizationName) ? 'admin' : 'contributor',
+      companyId: companyId,
       department: department || 'Software Development'
     });
 
-    console.log(`New user registered: ${userId} (${newUser._id})`);
+    // Handle Real-time Invitations
+    if (createOrganization && invitedMembers && invitedMembers.length > 0) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const validEmails = invitedMembers.filter(email => emailRegex.test(email));
+
+      if (validEmails.length > 0) {
+        // Send invitations in real-time
+        emailService.sendInvitation(validEmails, {
+          companyName: organizationName,
+          adminName: userId,
+          customMessage: customMessage
+        }).catch(err => console.error('Error in batch invitation sending:', err));
+      }
+    }
+
+    console.log(`New user registered: ${userId} (${newUser._id}) at company ${companyId}`);
+
+    // Log signup
+    const { logAction } = require('./middleware/audit');
+    logAction({ user: newUser, ip: req.ip, headers: req.headers }, 'SIGNUP', 'USER', newUser._id);
 
     // Generate token
-    const token = jwt.sign({ id: newUser.id, userId: newUser.userId, role: newUser.role, department: newUser.department }, JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({
+      id: newUser._id,
+      userId: newUser.userId,
+      role: newUser.role,
+      department: newUser.department,
+      companyId: newUser.companyId
+    }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({
       message: 'User registered successfully',
       token,
       role: newUser.role,
       userId: newUser.userId,
-      department: newUser.department
+      department: newUser.department,
+      companyId: newUser.companyId
     });
 
   } catch (err) {
@@ -662,6 +696,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
     const html = otpHtml('', code);
 
     if (mailer) {
+      console.log(`[DEV OTP] ${email} -> ${code}`);
       await mailer.sendMail({
         from: EMAIL_FROM,
         to: email,
@@ -695,14 +730,17 @@ app.post('/api/auth/send-otp', async (req, res) => {
 app.post('/api/auth/verify-otp', async (req, res) => {
   try {
     const { email, code } = req.body;
+    console.log(`[VERIFY OTP] Received: email="${email}", code="${code}"`);
     if (!email || !code) return res.status(400).json({ message: 'Email and code are required' });
     const entry = OTP_STORE.get(email.toLowerCase());
+    console.log(`[VERIFY OTP] Store entry for "${email.toLowerCase()}":`, entry);
     if (!entry) return res.status(400).json({ message: 'No OTP requested for this email' });
     if (Date.now() > entry.expiresAt) {
       OTP_STORE.delete(email.toLowerCase());
       return res.status(400).json({ message: 'OTP expired' });
     }
     if (entry.code !== String(code)) {
+      console.log(`[VERIFY OTP] Mismatch: store="${entry.code}", received="${code}"`);
       return res.status(400).json({ message: 'Invalid OTP' });
     }
     // Mark verified and issue a short-lived token authorizing signup
@@ -790,11 +828,27 @@ app.post('/api/login', async (req, res) => {
       console.log(`[LOGIN] APPROVED - Non-admin user ${userId} allowed to login`);
     }
 
-    const token = jwt.sign({ id: user.id, userId: user.userId, role: user.role, department: user.department }, JWT_SECRET, { expiresIn: '15m' });
+    const token = jwt.sign({
+      id: user._id || user.id,
+      userId: user.userId,
+      role: user.role,
+      department: user.department,
+      companyId: user.companyId
+    }, JWT_SECRET, { expiresIn: '15m' });
+
+    // Log login
+    const { logAction } = require('./middleware/audit');
+    logAction({ user: { ...user, _id: user._id || user.id }, ip: req.ip, headers: req.headers }, 'LOGIN', 'USER', user._id || user.id);
 
     console.log(`User logged in: ${userId} (${user.role})`);
 
-    res.json({ token, role: user.role, userId: user.userId, department: user.department });
+    res.json({
+      token,
+      role: user.role,
+      userId: user.userId,
+      department: user.department,
+      companyId: user.companyId
+    });
 
   } catch (err) {
     console.error('Login error:', err);
@@ -835,21 +889,41 @@ app.get('/api/users/by-department', async (req, res) => {
   }
 });
 
-// JWT auth middleware
-function auth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No token provided' });
-  }
-  const token = authHeader.split(' ')[1];
+// Replace inline auth with middleware import
+const auth = require('./middleware/auth');
+
+// ✅ NEW: Endpoint for checking user status
+app.get('/api/auth/status', auth, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
+    res.json({
+      id: req.user._id || req.user.id,
+      userId: req.user.userId,
+      role: req.user.role,
+      department: req.user.department,
+      companyId: req.user.companyId,
+      email: req.user.email,
+      isTwoFactorEnabled: req.user.isTwoFactorEnabled || false
+    });
   } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' });
+    res.status(500).json({ message: 'Failed to fetch status' });
   }
-}
+});
+
+// ✅ NEW: Endpoint for toggling 2FA
+app.post('/api/auth/toggle-2fa', auth, async (req, res) => {
+  try {
+    const { enable } = req.body;
+    await User.findByIdAndUpdate(req.user._id || req.user.id, { isTwoFactorEnabled: enable });
+    res.json({ message: `Two-Factor Authentication ${enable ? 'enabled' : 'disabled'}` });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update 2FA status' });
+  }
+});
+
+// Update unknown API routes to return JSON
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ message: `API endpoint ${req.method} ${req.originalUrl} not found` });
+});
 
 // Upload endpoint (streaming, with optional compression)
 app.post('/api/files/upload', auth, async (req, res) => {

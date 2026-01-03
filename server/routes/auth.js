@@ -51,7 +51,7 @@ router.post('/register', async (req, res, next) => {
     registeredUsers.push(newUser);
     await userManagement.saveUsers(registeredUsers);
 
-    res.status(201).json({ id: newUser.id, name: newUser.userId, email: newUser.email });
+    res.status(201).json({ id: newUser.id, name: newUser.userId, email: newUser.email, companyId: newUser.companyId });
   } catch (err) {
     next(err);
   }
@@ -69,7 +69,11 @@ router.post('/login', async (req, res, next) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || 'supersecretkey123', { expiresIn: '1d' });
+    const token = jwt.sign({
+      id: user.id,
+      role: user.role,
+      companyId: user.companyId
+    }, process.env.JWT_SECRET || 'supersecretkey123', { expiresIn: '1d' });
     res.json({ token });
   } catch (err) {
     next(err);
@@ -136,7 +140,8 @@ router.get(
           id: user.id,
           userId: user.userId,
           role: user.role,
-          department: user.department
+          department: user.department,
+          companyId: user.companyId
         },
         process.env.JWT_SECRET || 'supersecretkey123',
         { expiresIn: '15m' }
@@ -144,7 +149,7 @@ router.get(
 
       // Redirect to frontend with token
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      res.redirect(`${frontendUrl}/auth/callback?token=${token}&role=${user.role}&department=${user.department}&userId=${user.userId || user.id}`);
+      res.redirect(`${frontendUrl}/auth/callback?token=${token}&role=${user.role}&department=${user.department}&userId=${user.userId || user.id}&companyId=${user.companyId || ''}`);
     } catch (err) {
       console.error('Google callback error:', err);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -184,7 +189,8 @@ router.post('/update-department', async (req, res, next) => {
         id: user.id,
         userId: user.userId,
         role: user.role,
-        department: department
+        department: department,
+        companyId: user.companyId
       },
       process.env.JWT_SECRET || 'supersecretkey123',
       { expiresIn: '15m' }

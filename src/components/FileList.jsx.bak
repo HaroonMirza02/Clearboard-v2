@@ -1,18 +1,18 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_ENDPOINTS } from '../utils/api';
-import { useNavigate, useLocation } from 'react-router-dom'; // âœ… UPDATED: include useLocation
+import { useNavigate, useLocation } from 'react-router-dom'; // ✅ UPDATED: include useLocation
 import { useIdleTimer } from '../hooks/useIdleTimer'; // Import the new hook
 import Fuse from 'fuse.js';
 import JSZip from 'jszip';
-import * as pdfjsLib from 'pdfjs-dist'; // âœ… NEW: PDF.js for first page preview
+import * as pdfjsLib from 'pdfjs-dist'; // ✅ NEW: PDF.js for first page preview
 import '../styles/Dashboard.css'; // Import the new CSS file
 import '../styles/Modal.css'; // The new modal styles
 import '../styles/Calendar.css'; // Professional calendar picker styling
 import AdminUserFilter from './AdminUserFilter';
-import SemanticSearchBar from './SemanticSearchBar'; // âœ… NEW: Semantic search component
-import ModernDatePicker from './ModernDatePicker'; // âœ… NEW: Modern calendar picker
+import SemanticSearchBar from './SemanticSearchBar'; // ✅ NEW: Semantic search component
+import ModernDatePicker from './ModernDatePicker'; // ✅ NEW: Modern calendar picker
 
-// âœ… Configure PDF.js worker - using local worker from node_modules
+// ✅ Configure PDF.js worker - using local worker from node_modules
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
@@ -56,7 +56,7 @@ const extractTextFromPptxSlideXml = (xmlDoc) => {
   return lines.join('\n').trim();
 };
 
-// âœ… DOCX First Page Preview Component (text-only, first page)
+// ✅ DOCX First Page Preview Component (text-only, first page)
 const DOCXFirstPagePreview = ({ url, name }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -162,7 +162,7 @@ const DOCXFirstPagePreview = ({ url, name }) => {
   );
 };
 
-// âœ… PPTX First Slide Preview Component (text-only, first slide)
+// ✅ PPTX First Slide Preview Component (text-only, first slide)
 const PPTXFirstSlidePreview = ({ url, name }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -281,7 +281,7 @@ const PPTXFirstSlidePreview = ({ url, name }) => {
   );
 };
 
-// âœ… PDF First Page Preview Component
+// ✅ PDF First Page Preview Component
 const PDFFirstPagePreview = ({ url, name }) => {
   const canvasRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -629,7 +629,7 @@ function FileList(props) {
   const [success, setSuccess] = useState('');
   const [department, setDepartment] = useState('');
   // In FileList.jsx
-  // âœ… --- NEW STATES FOR MODALS & ACTIONS ---
+  // ✅ --- NEW STATES FOR MODALS & ACTIONS ---
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null); // File to be edited/deleted
@@ -637,7 +637,7 @@ function FileList(props) {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewFileData, setPreviewFileData] = useState(null); // { fileId, name, fileType, version, url }
   const [previewLoading, setPreviewLoading] = useState(false);
-  // âœ… UPDATED state for the edit form
+  // ✅ UPDATED state for the edit form
   const [allOrganizationUsers, setAllOrganizationUsers] = useState([]);
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -651,11 +651,10 @@ function FileList(props) {
   const [showDownloadLinkModal, setShowDownloadLinkModal] = useState(false);
   const [downloadLinkMessage, setDownloadLinkMessage] = useState('');
 
-  // âœ… NEW: Sorting and File Type Filtering
+  // ✅ NEW: Sorting and File Type Filtering
   const [sortBy, setSortBy] = useState('recent'); // 'recent', 'oldest', 'name-asc', 'name-desc', 'size-asc', 'size-desc'
   const [fileTypeFilter, setFileTypeFilter] = useState('all'); // 'all', 'pdf', 'ppt', 'doc', 'excel', 'image', 'video', 'other'
   const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'draft', 'approved', 'archived'
-  const [showMyFilesOnly, setShowMyFilesOnly] = useState(false); // New: My Files toggle
   const { percentageUsed, spaceLeftGB } = React.useMemo(() => {
 
     if (!stats.storageUsedMB) {
@@ -681,7 +680,7 @@ function FileList(props) {
 
   }, [stats.storageUsedMB, STORAGE_QUOTA_MB]);
 
-  // âœ… UPDATED handler to open the edit modal and populate state
+  // ✅ UPDATED handler to open the edit modal and populate state
   const handleOpenEditModal = (file) => {
     if (readOnlyMode) return; // Block in read-only
     setSelectedFile(file);
@@ -811,7 +810,7 @@ function FileList(props) {
     setSelectedFile(null);
   };
 
-  // âœ… UPDATED handler to manage form changes (including the file input)
+  // ✅ UPDATED handler to manage form changes (including the file input)
   const handleEditFormChange = (e) => {
     if (readOnlyMode) return; // Block in read-only
     const { name, value, files } = e.target;
@@ -822,7 +821,7 @@ function FileList(props) {
     }
   };
 
-  // âœ… REWRITTEN handler to submit the form as multipart/form-data
+  // ✅ REWRITTEN handler to submit the form as multipart/form-data
   const handleUpdateFile = async (e) => {
     e.preventDefault();
     if (readOnlyMode) return; // Block in read-only
@@ -1059,7 +1058,7 @@ function FileList(props) {
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
 
-  // âœ… NEW: Semantic search states
+  // ✅ NEW: Semantic search states
   const [semanticSearchResults, setSemanticSearchResults] = useState([]);
   const [isSemanticSearchActive, setIsSemanticSearchActive] = useState(false);
 
@@ -1155,11 +1154,11 @@ function FileList(props) {
   };
 
 
-  // âœ… NEW STATE for the action dropdown menu
+  // ✅ NEW STATE for the action dropdown menu
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const actionMenuRef = useRef(null);
 
-  // âœ… NEW EFFECT to close dropdown when clicking outside
+  // ✅ NEW EFFECT to close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
@@ -1203,7 +1202,7 @@ function FileList(props) {
         console.log(`File: ${fileGroup.name}, isOwner: ${fileGroup.isOwner}, isShared: ${fileGroup.isShared}`);
       });
 
-      // âœ… ADD THIS CHECK
+      // ✅ ADD THIS CHECK
       // Ensure that data is an array before setting the state
       if (Array.isArray(data)) {
         setFiles(data);
@@ -1212,7 +1211,7 @@ function FileList(props) {
         setFiles([]); // Default to an empty array to prevent crashes
       }
       // Calculate real-time stats
-      // âœ… REPLACED: New, simpler stat calculation
+      // ✅ REPLACED: New, simpler stat calculation
       const totalFiles = data.length;
       const totalStorageKB = data.reduce((sum, fileGroup) => {
         return sum + parseFloat(fileGroup.totalSizeKB || 0);
@@ -1395,7 +1394,7 @@ function FileList(props) {
     };
   }, []);
 
-  // âœ… NEW: Handle semantic search results
+  // ✅ NEW: Handle semantic search results
   const handleSemanticSearchResults = useCallback((results) => {
     if (results && results.length > 0) {
       setSemanticSearchResults(results);
@@ -1406,7 +1405,7 @@ function FileList(props) {
     }
   }, []);
 
-  // âœ… NEW: Handle semantic search result click
+  // ✅ NEW: Handle semantic search result click
   const handleSemanticResultClick = useCallback((result) => {
     // Download the file when clicked
     handleDownload(result.fileId, result.filename, null, null);
@@ -1415,7 +1414,7 @@ function FileList(props) {
   const filteredFiles = React.useMemo(() => {
     const isAdmin = userRole === 'admin';
 
-    // âœ… NEW: If semantic search is active, convert results to file format
+    // ✅ NEW: If semantic search is active, convert results to file format
     if (isSemanticSearchActive && semanticSearchResults.length > 0) {
       // Map semantic search results to file format
       return semanticSearchResults.map(result => {
@@ -1462,10 +1461,8 @@ function FileList(props) {
       }
     }
 
-    // Common filters: category + dates + My Files
+    // Common filters: category + dates
     filteredFiles = filteredFiles.filter(f => {
-      // ✅ NEW: My Files Filter
-      if (showMyFilesOnly && f.ownerUserId !== currentUserId) return false;
       if (filterCategory && f.category !== filterCategory) return false;
       if (filterDateFrom || filterDateTo) {
         const fileDate = new Date(f.uploadedAt);
@@ -1482,7 +1479,7 @@ function FileList(props) {
       return true;
     });
 
-    // âœ… NEW: File Type Filtering
+    // ✅ NEW: File Type Filtering
     if (fileTypeFilter !== 'all') {
       filteredFiles = filteredFiles.filter(f => {
         // Check file type from the first version (most recent)
@@ -1541,7 +1538,7 @@ function FileList(props) {
       filteredFiles = results.map(result => result.item);
     }
 
-    // âœ… NEW: Sorting Logic
+    // ✅ NEW: Sorting Logic
     const sortedFiles = [...filteredFiles].sort((a, b) => {
       switch (sortBy) {
         case 'recent':
@@ -1632,7 +1629,7 @@ function FileList(props) {
   };
 
 
-  /* âœ… NEW: Success buzzer sound using Web Audio API */
+  /* ✅ NEW: Success buzzer sound using Web Audio API */
   const playSuccessSound = () => {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1785,7 +1782,7 @@ function FileList(props) {
       setFileCreatedAt(today);
 
       showSuccessMessage();
-      playSuccessSound(); // âœ… Play sound on success
+      playSuccessSound(); // ✅ Play sound on success
       await fetchFiles();
 
     } catch (err) {
@@ -2062,7 +2059,7 @@ function FileList(props) {
                       </linearGradient>
                     </defs>
                   </svg>
-                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '24px', animation: 'pulse 2s ease-in-out infinite' }}>ðŸ“</div>
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '24px', animation: 'pulse 2s ease-in-out infinite' }}>📁</div>
                 </div>
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1f2937', margin: '0 0 4px 0', animation: 'fadeIn 0.5s ease-in-out 0.2s both' }}>Loading Your Files</h3>
                 <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, animation: 'fadeIn 0.5s ease-in-out 0.4s both' }}>Please wait...</p>
@@ -2092,7 +2089,7 @@ function FileList(props) {
             </div>
           </div>
         </div>
-        {/* âœ… NEW: Storage Quota Progress Bar */}
+        {/* ✅ NEW: Storage Quota Progress Bar */}
         <div className="storage-quota-card">
           <h4>Storage Quota</h4>
           <div className="progress-bar-container">
@@ -2408,6 +2405,34 @@ function FileList(props) {
         )}
 
         <div style={{ marginTop: 12 }}>
+  // ✅ NEW: Dynamic Organization Users for Teams view
+          const [allOrganizationUsers, setAllOrganizationUsers] = useState([]);
+
+  // Fetch all organization users if admin
+  useEffect(() => {
+    if (userRole === 'admin') {
+      const fetchOrgUsers = async () => {
+        try {
+          const res = await fetch(API_ENDPOINTS.ORG_USERS, {
+            headers: {Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            // Map to format expected by AdminUserFilter ({userId: '...', display: '...' })
+            // Assuming API returns array of User objects with userId field
+            const mappedUsers = data.map(u => ({
+            userId: u.userId,
+          display: u.userId // or u.name if available 
+            }));
+          setAllOrganizationUsers(mappedUsers);
+          }
+        } catch (err) {
+            console.error("Failed to fetch org users", err);
+        }
+      };
+          if (token) fetchOrgUsers();
+    }
+  }, [userRole, token]);
 
 
           {/* Admin filters: by Owner (Teams path) or by Project (Projects path) */}
@@ -2436,29 +2461,8 @@ function FileList(props) {
             </div>
           )}
 
-          {/* ✨ MODERN FILTER GRID - Responsive ✨ */}
-          <div style={{ display: 'grid', marginBottom: 28, gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, alignItems: 'end' }}>
-            {/* ✅ NEW: Ownership Filter (My Files) */}
-            <div>
-              <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Show</label>
-              <select
-                value={showMyFilesOnly ? 'mine' : 'all'}
-                onChange={e => setShowMyFilesOnly(e.target.value === 'mine')}
-                style={{
-                  ...select,
-                  height: '44px',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  border: '2px solid #e5e7eb',
-                  borderRadius: 10,
-                  transition: 'all 0.2s ease',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="all">All Files</option>
-                <option value="mine">My Files Only</option>
-              </select>
-            </div>
+          {/* ✨ MODERN 6-COLUMN FILTER GRID ✨ */}
+          <div style={{ display: 'grid', marginBottom: 28, gridTemplateColumns: 'repeat(6, 1fr)', gap: 16, alignItems: 'end' }}>
             {/* Category Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>Category</label>
@@ -2590,7 +2594,7 @@ function FileList(props) {
               </div>
             </div>
 
-            {/* âœ… NEW: Sort By Filter */}
+            {/* ✅ NEW: Sort By Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}> Sort By</label>
               <select
@@ -2624,7 +2628,7 @@ function FileList(props) {
               </select>
             </div>
 
-            {/* âœ… NEW: File Type Filter */}
+            {/* ✅ NEW: File Type Filter */}
             <div>
               <label style={{ ...label, fontSize: 13, marginBottom: 8 }}>File Type</label>
               <select
@@ -2649,7 +2653,7 @@ function FileList(props) {
                   e.target.style.boxShadow = 'none';
                 }}
               >
-                <option value="all">ðŸ“‚ All Files</option>
+                <option value="all">📂 All Files</option>
                 <option value="pdf"> PDF Files</option>
                 <option value="ppt">PowerPoint</option>
                 <option value="doc">Word Docs</option>
@@ -2747,7 +2751,7 @@ function FileList(props) {
           )}
         </div>
 
-        {/* âœ¨ SEMANTIC SEARCH BAR - Shows only when category is selected âœ¨ */}
+        {/* ✨ SEMANTIC SEARCH BAR - Shows only when category is selected ✨ */}
         {
           filterCategory && (
             <div style={{
@@ -2907,7 +2911,7 @@ function FileList(props) {
                     opacity: downloadLinkSending ? 0.6 : 1
                   }}
                 >
-                  ðŸ“§ {downloadLinkSending ? 'Sending...' : 'Send Download Links'}
+                  📧 {downloadLinkSending ? 'Sending...' : 'Send Download Links'}
                 </button>
                 <button
                   onClick={() => handleOpenDeleteModal(null)} // Call with null for bulk mode
@@ -2921,7 +2925,7 @@ function FileList(props) {
                     fontWeight: 600
                   }}
                 >
-                  ðŸ—‘ï¸ Delete Selected
+                  🗑️ Delete Selected
                 </button>
               </div>
             </div>
@@ -2963,7 +2967,7 @@ function FileList(props) {
                 <tr>
                   <td style={{ ...tdStyle, textAlign: 'center', padding: 32, color: '#64748b' }} colSpan={userRole === 'admin' ? 12 : 11}>
                     <div style={{ fontSize: 48, marginBottom: 8 }}>
-                      {filterCategory || filterDateFrom || filterDateTo ? 'ðŸ”' : 'ðŸ“‚'}
+                      {filterCategory || filterDateFrom || filterDateTo ? '🔍' : '📂'}
                     </div>
                     {filterCategory || filterDateFrom || filterDateTo
                       ? 'No files match the selected filters'
@@ -3070,13 +3074,13 @@ function FileList(props) {
                         </button>
                         {openActionMenuId === fileGroup.id && (
                           <div className="actions-dropdown">
-                            <button className="actions-item" onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}>ðŸ‘ï¸ Preview</button>
+                            <button className="actions-item" onClick={() => handlePreview(displayedVersion.id, fileGroup.name, displayedVersion.fileType, displayedVersion.version)}>👁️ Preview</button>
                             <button
                               className="actions-item"
                               onClick={() => handleSendDownloadLink([displayedVersion.id])}
                               disabled={downloadLinkSending}
                             >
-                              ðŸ“§ {downloadLinkSending ? 'Sending...' : 'Send Download Link'}
+                              📧 {downloadLinkSending ? 'Sending...' : 'Send Download Link'}
                             </button>
                             {/* {!readOnlyMode && fileGroup.isOwner && (
                               fileGroup.isShared ?
@@ -3086,10 +3090,10 @@ function FileList(props) {
                             )} */}
                             <button className="actions-item" onClick={() => handleOpenEditModal(fileGroup)}>Edit Details</button>
                             {isManagerOrAdmin && displayedVersion.status === 'draft' && (
-                              <button className="actions-item" onClick={() => handleUpdateStatus(fileGroup.id, 'approved')}>âœ”ï¸ Approve</button>
+                              <button className="actions-item" onClick={() => handleUpdateStatus(fileGroup.id, 'approved')}>✔️ Approve</button>
                             )}
                             {isManagerOrAdmin && displayedVersion.status !== 'archived' && (
-                              <button className="actions-item" onClick={() => handleUpdateStatus(fileGroup.id, 'archived')}>ðŸ“ Archive</button>
+                              <button className="actions-item" onClick={() => handleUpdateStatus(fileGroup.id, 'archived')}>📁 Archive</button>
                             )}
                             {!readOnlyMode && <button className="actions-item delete" onClick={() => handleOpenDeleteModal(displayedVersion)}>Delete File</button>}
                           </div>
@@ -3103,9 +3107,9 @@ function FileList(props) {
           </table>
         </div>
       </div>
-      {/* âœ… NEW MODALS (place them at the end of the main div) */}
+      {/* ✅ NEW MODALS (place them at the end of the main div) */}
 
-      {/* âœ… UPDATED EDIT MODAL */}
+      {/* ✅ UPDATED EDIT MODAL */}
       {isEditModalOpen && !readOnlyMode && (
         <div className="modal-overlay" onClick={handleCloseModals}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -3222,7 +3226,7 @@ function FileList(props) {
       {/* Success Notification */}
       {showSuccessNotification && (
         <div style={successNotificationVisible}>
-          <span>âœ…</span>
+          <span>✅</span>
           <span>File uploaded successfully!</span>
         </div>
       )}
@@ -3230,7 +3234,7 @@ function FileList(props) {
       {/* Success Message for Sharing */}
       {success && (
         <div style={successNotificationVisible}>
-          <span>âœ…</span>
+          <span>✅</span>
           <span>{success}</span>
         </div>
       )}
@@ -3242,12 +3246,12 @@ function FileList(props) {
           background: '#dc2626',
           transform: 'translateX(0)'
         }}>
-          <span>âš </span>
+          <span>⚠</span>
           <span>{error}</span>
         </div>
       )}
 
-      {/* âœ… FILE PREVIEW MODAL */}
+      {/* ✅ FILE PREVIEW MODAL */}
       {isPreviewModalOpen && (
         <div
           className="preview-modal-overlay"
@@ -3333,7 +3337,7 @@ function FileList(props) {
                 onMouseLeave={(e) => e.target.style.background = 'transparent'}
                 title="Close (Esc)"
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -3462,7 +3466,7 @@ function FileList(props) {
                         <div style={{
                           fontSize: '48px',
                           marginBottom: '24px'
-                        }}>ðŸŽµ</div>
+                        }}>🎵</div>
                         <h4 style={{ color: '#fff', marginBottom: '16px' }}>
                           {previewFileData.name}
                         </h4>
@@ -3489,7 +3493,7 @@ function FileList(props) {
                       <div style={{
                         fontSize: '64px',
                         marginBottom: '24px'
-                      }}>ðŸ“„</div>
+                      }}>📄</div>
                       <h3 style={{
                         color: '#fff',
                         marginBottom: '12px',

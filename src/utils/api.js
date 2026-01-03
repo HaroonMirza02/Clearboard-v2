@@ -30,6 +30,8 @@ export const API_ENDPOINTS = {
   // Google OAuth endpoints
   GOOGLE_AUTH: `${API_BASE_URL}/api/auth/google`,
   UPDATE_DEPARTMENT: `${API_BASE_URL}/api/auth/update-department`,
+  USER_STATUS: `${API_BASE_URL}/api/auth/status`,
+  TOGGLE_2FA: `${API_BASE_URL}/api/auth/toggle-2fa`,
 
   FILES: `${API_BASE_URL}/api/files`,
   UPLOAD: `${API_BASE_URL}/api/files/upload`,
@@ -44,6 +46,7 @@ export const API_ENDPOINTS = {
   DELETE_FILE: (fileId) => `${API_BASE_URL}/api/files/delete/${fileId}`,
   DELETE_MULTIPLE: `${API_BASE_URL}/api/files/delete-multiple`,
   EDIT_FILE: (fileId) => `${API_BASE_URL}/api/files/edit/${fileId}`,
+  UPDATE_FILE_STATUS: (fileId) => `${API_BASE_URL}/api/files/status/${fileId}`,
   // Share endpoints
   SHARE_FILE: (fileId) => `${API_BASE_URL}/api/files/share/${fileId}`,
   UNSHARE_FILE: (fileId) => `${API_BASE_URL}/api/files/unshare/${fileId}`,
