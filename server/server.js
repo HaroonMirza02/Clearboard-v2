@@ -37,6 +37,7 @@ const Counter = require('./models/Counter');
 const Metadata = require('./models/Metadata');
 const Company = require('./models/Company');
 const emailService = require('./services/email');
+const auth = require('./middleware/auth');
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/clearboard';
@@ -890,7 +891,7 @@ app.get('/api/users/by-department', async (req, res) => {
 });
 
 // Replace inline auth with middleware import
-const auth = require('./middleware/auth');
+
 
 // ✅ NEW: Endpoint for checking user status
 app.get('/api/auth/status', auth, async (req, res) => {
