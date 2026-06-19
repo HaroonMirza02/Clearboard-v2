@@ -5,7 +5,7 @@ const fileSchema = new mongoose.Schema({
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
-  category: { type: String, enum: ['research', 'NA', 'CA', 'source', 'docs', 'legal', 'finance'], required: true },
+  category: { type: String, enum: ['research', 'NA', 'CA', 'source', 'docs', 'legal', 'finance', 'General Research'], required: true },
   status: {
     type: String,
     enum: ['draft', 'approved', 'archived'],

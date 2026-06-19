@@ -1,8 +1,17 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const express = require('express');
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('!!! UNHANDLED REJECTION !!!', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('!!! UNCAUGHT EXCEPTION !!!', err);
+});
+
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
-const path = require('path');
 const morgan = require('morgan');
 const zlib = require('zlib');
 const archiver = require('archiver');
@@ -46,6 +55,11 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.error('MongoDB connection error:', err));
 
 const app = express();
+
+app.use((req, res, next) => {
+  console.log(`[REQUEST] ${req.method} ${req.url}`);
+  next();
+});
 app.disable('x-powered-by');
 
 // Enable CORS for frontend origins
@@ -123,16 +137,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 // Note: We no longer use multer for uploads; we stream with Busboy.
 
-// Hardcoded users (legacy)
-const HARDCODED_USERS = [
-  { userId: 'CB_SD_HaroonMirza', email: 'haroon.mirza040602@gmail.com', password: 'password123', id: 'user-1', role: 'user', department: 'Software Development' },
-  { userId: 'CB_SD_IbrahimMalik', password: 'password123', id: 'user-2', role: 'user', department: 'Software Development' },
-  { userId: 'CB_SD_ZaidBinAsim', email: 'zaidbinasim2197@gmail.com', password: 'password123', id: 'user-3', role: 'user', department: 'Data and Research Analyst' },
-  { userId: 'CB_BD_MirzaUzairBaig', password: 'password123', id: 'user-4', role: 'user', department: 'Business Development' },
-  { userId: 'CB_CEO_AliZakaria_01', password: 'admin123', id: 'admin-1', role: 'admin', department: 'Admin' }
-];
+const { HARDCODED_USERS, DEFAULT_JWT_SECRET } = require('./config/constants');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.EMAIL_USER || 'no-reply@example.com';
 const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST || '';
 const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
@@ -921,11 +928,8 @@ app.post('/api/auth/toggle-2fa', auth, async (req, res) => {
   }
 });
 
-// Update unknown API routes to return JSON
-app.all('/api/*', (req, res) => {
-  res.status(404).json({ message: `API endpoint ${req.method} ${req.originalUrl} not found` });
-});
-
+// To be reviewed by the supervisor
+/*
 // Upload endpoint (streaming, with optional compression)
 app.post('/api/files/upload', auth, async (req, res) => {
   const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 2 * 1024 * 1024 * 1024); // 2GB default
@@ -1957,6 +1961,8 @@ app.post('/api/files/unshare/:fileId', auth, async (req, res) => {
     res.status(500).json({ message: 'Failed to unshare file', error: err.message });
   }
 });
+*/
+app.use('/api/files', require('./routes/files'));
 
 // ========================================
 // SEMANTIC SEARCH ENDPOINTS
@@ -2153,19 +2159,18 @@ app.get('/api/search/stats', auth, async (req, res) => {
 
 // Global error handler — ensure CORS headers are present on errors for allowed origins
 app.use((err, req, res, next) => {
-  try {
-    const origin = req.headers.origin;
-    if (origin && ALLOWED_ORIGINS.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    }
-  } catch { }
+  console.error('[GLOBAL ERROR]', err);
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
-  if (!res.headersSent) res.status(status).json({ message, error: message });
+  
+  if (!res.headersSent) {
+    res.status(status).json({ 
+      message, 
+      error: message, 
+      stack: err.stack,
+      details: err.details || undefined
+    });
+  }
 });
 
 // Health check endpoint for GCP Cloud Run
@@ -2173,9 +2178,22 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ message: `API endpoint ${req.method} ${req.originalUrl} not found` });
+})
+
+app.use((err, req, res, next) => {
+  console.error('[GLOBAL ERROR]', err);
+  res.status(500).json({
+    message: 'Internal Server Error',
+    error: err.message,
+    stack: err.stack
+  });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} [VERSION: FIX-500-LOGGING]`);
   console.log(`Local uploads directory: ${UPLOADS_DIR}`);
   console.log(`Metadata stored in MongoDB`);
   console.log(`Users stored in MongoDB`);
@@ -2205,4 +2223,5 @@ app.listen(PORT, '0.0.0.0', () => {
       console.error('  Server will continue running without semantic search');
     }
   });
+
 });

@@ -17,14 +17,21 @@ function getLocalPath(filename) {
 
 // Upload a buffer to local storage
 function uploadToGCS(filename, buffer, contentType) {
+  console.log(`[GCS DEBUG] Uploading ${filename} (${buffer.length} bytes)`);
   return new Promise((resolve, reject) => {
     const fullPath = getLocalPath(filename);
     const dir = path.dirname(fullPath);
+    console.log(`[GCS DEBUG] Saving to: ${fullPath}`);
     if (!fs.existsSync(dir)) {
+      console.log(`[GCS DEBUG] Creating directory: ${dir}`);
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFile(fullPath, buffer, (err) => {
-      if (err) return reject(err);
+      if (err) {
+        console.error('[GCS ERROR] Write failed:', err);
+        return reject(err);
+      }
+      console.log('[GCS DEBUG] Write successful');
       resolve(filename);
     });
   });

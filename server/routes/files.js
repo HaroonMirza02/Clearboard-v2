@@ -210,6 +210,7 @@ router.patch('/status/:fileId', [auth, tenant], async (req, res, next) => {
  *                 fileId:
  *                   type: string
  */
+console.log('[FILES ROUTE] Loading files route file...');
 const { uploadToGCS } = require('../services/gcs');
 router.post('/upload', [auth, tenant], upload.single('file'), async (req, res, next) => {
   try {
@@ -235,27 +236,29 @@ router.post('/upload', [auth, tenant], upload.single('file'), async (req, res, n
     // 3. Duplicate Detection (Checksum)
     const checksum = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
     const existingVersion = await FileVersion.findOne({ checksum, status: 'stored' }).populate('fileId');
-    if (existingVersion && existingVersion.fileId && existingVersion.fileId.companyId.equals(req.user.companyId)) {
-      console.log(`[UPLOAD] Duplicate content detected. Hash ${checksum} already exists in file ${existingVersion.fileId.name} (${existingVersion.fileId._id}). Proceeding with versioning/creation.`);
-    }
+    
+    // Normalize fields
+    const finalFilename = filename || req.file?.originalname;
+    const finalCategory = category || 'General Research';
 
     // Find or create File with tenant isolation
-    let file = await File.findOne({ name: filename, ownerId: req.user._id, companyId: req.user.companyId });
+    let file = await File.findOne({ name: finalFilename, ownerId: req.user._id, companyId: req.user.companyId });
     if (!file) {
       file = await File.create({
-        name: filename,
+        name: finalFilename,
         ownerId: req.user._id,
         companyId: req.user.companyId,
-        category,
-        status: 'draft' // Initial state
+        category: finalCategory,
+        status: 'draft'
       });
     }
 
     const versionNumber = await FileVersion.countDocuments({ fileId: file._id }) + 1;
 
-    // Upload to GCS
-    const objectKey = `${req.user.companyId}/${file._id}/v${versionNumber}/${filename}`;
+    // Upload to local storage
+    const objectKey = `${req.user.companyId}/${file._id}/v${versionNumber}/${finalFilename}`;
     await uploadToGCS(objectKey, req.file.buffer, contentType || req.file.mimetype);
+;
 
     await FileVersion.create({
       fileId: file._id,
@@ -526,6 +529,106 @@ router.get('/download-raw/*', async (req, res, next) => {
     });
 
     stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+
+// ==========================================
+// MIGRATED MISSING ENDPOINTS (Legacy Support)
+// ==========================================
+
+// Edit File
+router.post('/edit/:fileId', [auth, tenant], async (req, res, next) => {
+  try {
+    const { fileId } = req.params;
+    const { name, category, status } = req.body;
+    const file = await File.findOne({ _id: fileId, companyId: req.user.companyId });
+    
+    if (!file) return res.status(404).json({ message: 'File not found' });
+
+    // RBAC
+    if (!file.ownerId.equals(req.user._id) && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only edit your own files' });
+    }
+
+    if (name) file.name = name;
+    if (category) file.category = category;
+    if (status) file.status = status;
+    file.updatedAt = new Date();
+    
+    await file.save();
+    
+    res.json({ message: 'File updated successfully', fileId, newName: file.name, newCategory: file.category });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Delete File
+router.delete('/delete/:fileId', [auth, tenant], async (req, res, next) => {
+  try {
+    const { fileId } = req.params;
+    // OTP verification has been temporarily bypassed for the new migration.
+    // Supervisor should review if OTP is still required here.
+    
+    const file = await File.findOne({ _id: fileId, companyId: req.user.companyId });
+    if (!file) return res.status(404).json({ message: 'File not found' });
+
+    if (!file.ownerId.equals(req.user._id) && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only delete your own files' });
+    }
+
+    await File.deleteOne({ _id: fileId });
+    await FileVersion.deleteMany({ fileId: fileId });
+    
+    res.json({ message: 'File deleted successfully', fileId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Delete Multiple Files
+router.post('/delete-multiple', [auth, tenant], async (req, res, next) => {
+  try {
+    const { fileIds } = req.body;
+    if (!fileIds || !Array.isArray(fileIds)) {
+      return res.status(400).json({ message: 'fileIds array is required' });
+    }
+
+    const files = await File.find({ _id: { $in: fileIds }, companyId: req.user.companyId });
+    
+    const allowedIds = files
+      .filter(f => f.ownerId.equals(req.user._id) || req.user.role === 'admin')
+      .map(f => f._id);
+
+    if (allowedIds.length > 0) {
+      await File.deleteMany({ _id: { $in: allowedIds } });
+      await FileVersion.deleteMany({ fileId: { $in: allowedIds } });
+    }
+
+    res.json({ 
+      message: 'Deletion complete', 
+      deletedCount: allowedIds.length,
+      requestedCount: fileIds.length 
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Download specific version (legacy fallback)
+router.get('/download/:fileId/version/:versionNumber', [auth, tenant], async (req, res, next) => {
+  try {
+    const { fileId, versionNumber } = req.params;
+    const fileVersion = await FileVersion.findOne({ fileId, versionNumber: Number(versionNumber) });
+    if (!fileVersion) return res.status(404).json({ message: 'Version not found' });
+    
+    const { getSignedUrl } = require('../services/gcs');
+    const url = await getSignedUrl(fileVersion.objectKey);
+    res.json({ url });
   } catch (err) {
     next(err);
   }

@@ -1,2 +1,8 @@
 .env
 clearboard-key.json
+deploy-gcp.ps1.bak
+GCP_DEPLOYMENT.md.bak
+node_modules
+migrate-categories.js.bak
+passport.js.bak
+uploads/

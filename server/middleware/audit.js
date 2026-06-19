@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 
 const auditLogSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    userId: { type: String, ref: 'User' },
     username: String,
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
+    companyId: { type: String, ref: 'Company' },
     action: { type: String, required: true }, // 'UPLOAD', 'DOWNLOAD', 'STATUS_CHANGE', 'DELETE', 'LOGIN'
     resourceType: String, // 'FILE', 'USER', 'PROJECT'
     resourceId: String,
