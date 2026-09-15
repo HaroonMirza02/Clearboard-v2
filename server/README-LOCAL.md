@@ -24,7 +24,7 @@ npm install
 2. Enable the Cloud Storage API
 3. Create a Service Account with Storage permissions
 4. Download the service account key JSON file
-5. Place the key file in the `server` directory as `clearboard-key.json`
+5. Place the key file locally as `server/clearboard-key.json` (this path is gitignored — never commit it)
 
 ### 3. Environment Variables
 

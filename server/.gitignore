@@ -1,2 +1,9 @@
 .env
+.env.*
+!.env.example
 clearboard-key.json
+*-key.json
+*service-account*.json
+.cache/
+uploads/
+!uploads/.gitkeep

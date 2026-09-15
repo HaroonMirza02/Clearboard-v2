@@ -12,6 +12,31 @@ dist
 dist-ssr
 *.local
 
+# Environment and secrets — never commit
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Service account keys and TLS material
+*-key.json
+*service-account*.json
+serviceAccount*.json
+google-credentials.json
+*.pem
+*.p12
+*.pfx
+
+# Local ML / tokenizer caches
+server/.cache/
+
+# User uploads and runtime data
+server/uploads/
+!server/uploads/.gitkeep
+
+# Firebase hosting cache
+.firebase/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
